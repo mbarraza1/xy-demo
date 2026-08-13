@@ -25,7 +25,12 @@ import xy
 
 from .theme import BLUE_RAMP
 
-N = 250_000_000
+# 10M, not 250M. The live path re-scans source rows on every refine, so zoom
+# latency tracks the total point count even though the payload does not: at 250M
+# a first load took ~26 s and each uncached zoom stalled 0.9-1.7 s. This section
+# exists to prove drill-down resolves to individual markers, which was only
+# observed at 10M anyway; the 500M export above carries the scale argument.
+N = 10_000_000
 
 _COLUMNS: dict | None = None
 _LOCK = threading.Lock()

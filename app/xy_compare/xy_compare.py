@@ -352,27 +352,29 @@ def live_drilldown_section() -> rx.Component:
             "through a deep zoom - and never shows the sample badge.",
         ),
         prose(
-            "One honest limit on what that buys you at this size. On a 10-million-point "
-            "cloud the same path resolved all the way down to a dense field of "
-            "individual markers. At 250 million it kept serving finer density windows "
-            "instead: this cloud is the embedding stacked 192 times, so a window has to "
-            "be roughly 192x smaller before it falls under XY's ~2M direct budget and "
-            "the point tier takes over. The refinement is real and measurable either "
-            "way; whether it reaches individual markers depends on how many points are "
-            "in view, not on how many exist.",
+            "This section runs at 10 million points rather than 500 million, and the "
+            "reason is the honest counterweight to everything above. XY's ",
+            rx.text.em("payload"),
+            " is screen-bounded, but its ",
+            rx.text.em("work"),
+            " is not: every refine re-scans and re-bins the visible subset across the "
+            "source rows, so zoom latency tracks the total point count even though the "
+            "bytes on the wire do not. The same section built at 250 million took about "
+            "26 seconds to first paint and stalled 0.9 to 1.7 seconds on every zoom "
+            "that left the cached window. At 250 million it also never reached the "
+            "point tier - that cloud is the embedding stacked 192 times, so a window "
+            "must be roughly 192x smaller before it drops under XY's ~2M direct budget.",
         ),
         card(live_chart(), pad="0.75rem"),
         caption(
-            f"Running at {LIVE_N/1e6:,.0f} million points rather than 500 million, and "
-            f"the reason is memory, not capability. Measured on this machine, the "
-            f"backend holding this chart settles between 6.4 and 8.9 GB resident "
-            f"depending on how much it has been zoomed: {LIVE_N*16/1e9:.1f} GB of "
-            f"canonical store at XY's flat 16 bytes per point, about 3 GB of float32 "
-            f"source columns that are held rather than freed, and working buffers on "
-            f"top. Scaling that to 500M lands near 18 GB, past what this 36 GB machine "
-            f"keeps free - which is the whole reason this section runs at 250M and the "
-            f"file above runs at 500M. The columns are built once per process and "
-            f"shared across sessions; a second tab was measured and does not double it."
+            f"XY's canonical store is a flat 16 bytes per point, so this chart holds "
+            f"{LIVE_N*16/1e9:.2f} GB of coordinates resident plus its float32 source "
+            f"columns - trivial here, but the same arithmetic puts a live 250M chart "
+            f"between 6.4 and 8.9 GB and a live 500M chart near 18 GB, past what this "
+            f"36 GB machine keeps free. Columns are built once per process and shared "
+            f"across sessions; a second tab was measured and does not double it. The "
+            f"exported file above carries the 500-million-point argument precisely "
+            f"because it does not have to hold any of this."
         ),
         subtitle="Hover returns a real row; zoom requests a refined window from Python.",
     )
