@@ -118,6 +118,15 @@ is safe to stop it and restart. Reduce `SIZES` in that script if you have less R
   time, so all are sub-second even at 500M.
 - **XY's density surface is an aggregate**, visibly smoother than an exact-point plot.
   That is the correct trade at this scale, but it is a trade.
+- **The exported file has no drill-down.** This is the biggest asterisk on the 2 MB
+  headline. A standalone XY export carries a 512×384 density grid plus a deterministic
+  sample of ~8,200 points — the same budget at 10M points as at 500M — and nothing
+  else. Zoom past the grid's resolution and it re-bins from that sample (XY labels this
+  `zoom re-binned from sample` in the corner), which looks like a nearly empty plot;
+  measured in Chromium, zero further network requests are made, because there is no
+  Python process to make them to. Resolving back to exact rows requires a **live
+  kernel** — a notebook widget or a framework adapter with a running backend. The file
+  is small precisely because it does not contain the data.
 - **matplotlib is still right for a paper figure.** It only loses here because the axis
   is time and scale.
 - **XY is alpha** (0.0.6). Pre-1.0, the Reflex adapter is experimental, and the ~2M

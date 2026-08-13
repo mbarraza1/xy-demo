@@ -231,8 +231,38 @@ def xy_live_section() -> rx.Component:
             "Drag to pan, scroll to zoom. What you are looking at is a density surface: "
             "above roughly two million points XY stops shipping per-point geometry and "
             "sends a screen-bounded grid instead, which is why the file behind this "
-            "frame is under two megabytes. Zooming asks for a finer view of the region "
-            "you are in rather than re-sending the data."
+            "frame is under two megabytes."
+        ),
+        rx.box(
+            rx.text("Zoom in far enough and this chart thins out. That is the trade.",
+                    font_weight="600", color="var(--text)", margin_bottom="0.4rem"),
+            rx.text(
+                "This is a standalone file with no Python process behind it. It carries "
+                "a 512x384 density grid plus a deterministic sample of about 8,200 "
+                "points - and that is the file's entire data content, at 10 million "
+                "points or at 500 million. Past the grid's resolution there is nothing "
+                "left to ask for: no further network requests are made, and XY re-bins "
+                "from the sample, labelling it ",
+                rx.code("zoom re-binned from sample"),
+                " in the corner. Deep zoom shows a sparse scatter of sampled points, "
+                "not the underlying density. The 1.9 MB file is small precisely "
+                "because it does not contain the data.",
+                color="var(--text-secondary)", font_size="0.92rem", line_height="1.7",
+            ),
+            rx.text(
+                "Drill-down to exact rows is a live-kernel feature: it needs a notebook "
+                "widget or a framework adapter with a running backend, where the "
+                "canonical columns are still in Python and the chart can request a "
+                "refined window. That path is documented by XY and is not what this "
+                "frame measures - this frame is the exported-file path, and its "
+                "behaviour above is what was observed in the browser.",
+                color="var(--text-secondary)", font_size="0.92rem", line_height="1.7",
+                margin_top="0.7rem",
+            ),
+            background="var(--surface)", border="1px solid var(--border)",
+            border_left="3px solid var(--series-matplotlib)",
+            border_radius="10px", padding="1.1rem 1.25rem",
+            margin_top="1rem", margin_bottom="1.25rem",
         ),
         rx.box(
             rx.el.iframe(
@@ -741,10 +771,11 @@ def verdict_section() -> rx.Component:
             f"{mpl_png/60:.1f} minutes for the same 900x700 PNG, with no browser "
             "involved. Both produce a good image; one of them lets you iterate."))
     wins.append(point(
-        "Exact rows survive the reduction",
-        "The density surface is a rendering decision, not a data decision. The "
-        "canonical columns stay in Python, so hover and zoom resolve back to real "
-        "rows. A pre-downsampled scatter has thrown that away, and a PNG never had it."))
+        "The reduction is a rendering decision, not a destructive one",
+        "The canonical columns stay in Python at full precision, so the same chart "
+        "object can be re-rendered at any window or exported at any resolution "
+        "without recomputing anything. A pre-downsampled scatter has thrown that "
+        "away. Note the boundary carefully, though - see the opposite column."))
 
     nots = [rx.text("It does not", font_weight="600",
                     color="var(--series-matplotlib)", margin_bottom="0.9rem",
@@ -763,6 +794,18 @@ def verdict_section() -> rx.Component:
                 "at these sizes, because none of them render at construction time. Any "
                 "benchmark quoting large 'build' differences is measuring imports or "
                 "rendering."),
+            point(
+                "Give you drill-down in an exported file",
+                "This is the most important asterisk on the page. The standalone HTML "
+                "carries a density grid plus a deterministic sample of roughly 8,200 "
+                "points - the same budget at 10 million points as at 500 million - and "
+                "nothing else. Zoom past the grid's resolution and it re-bins from that "
+                "sample, which XY labels honestly in the corner but which looks like a "
+                "nearly empty plot. No further requests are made, because there is no "
+                "Python process to make them to. Resolving back to exact rows needs a "
+                "live kernel: a notebook widget or a framework adapter with a running "
+                "backend. If your deliverable is a file you email to someone, you are "
+                "shipping an overview, not a queryable dataset."),
             point(
                 "Show you the same picture a raster does",
                 "Above the density threshold XY draws an aggregate surface, not "
