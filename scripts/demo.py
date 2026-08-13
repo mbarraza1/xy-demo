@@ -139,7 +139,6 @@ def panel(lib: str, label: str, color: str, rec: dict, timeout: float) -> str:
     elif rec.get("status") == "timeout":
         badge = f'<span class="bad">still running at {timeout:.0f} s</span>'
         pr = rec.get("partial")
-        fb = rec.get("fallback")
         if pr and pr.get("status") == "partial":
             # A real partial render of the SAME points: the canvas as it stood
             # when the clock ran out, not a smaller substitute plot.
@@ -150,27 +149,14 @@ def panel(lib: str, label: str, color: str, rec: dict, timeout: float) -> str:
                     f'<img src="{pr["output"]}" alt="{label} partial render"></div>')
             stats = (f'drawn incrementally so the unfinished canvas could be kept '
                      f'&middot; peak {pr["peak_gb"]:.1f} GB')
-        elif fb and fb.get("status") == "ok":
-            # It produced nothing at the headline size, so show what it DID
-            # manage inside the same budget - a real run, at a fraction of the
-            # data, labelled as exactly that.
-            pct = 100.0 * fb["n"] / rec["n"]
-            inner = (f'<img src="{fb["output"]}" alt="{label} at {fb["n"]:,} points">'
-                     if fb["kind"] == "png" else
-                     (f'<iframe src="{fb["output"]}" loading="lazy"></iframe>'
-                      if fb["bytes"] <= INLINE_LIMIT else
-                      f'<div class="miss"><p><strong>{fb["bytes"]/1e6:,.0f} MB</strong>'
-                      f' — too large to embed.</p><p><a href="{fb["output"]}" '
-                      f'target="_blank">Open in its own tab</a></p></div>'))
-            body = (f'<div class="fallback"><p class="tag">given the same '
-                    f'{timeout:.0f} s: {fb["n"]:,} points — {pct:.1f}% of the data'
-                    f'</p>{inner}</div>')
-            stats = (f'that {pct:.1f}% took {fb["total"]:.2f} s &middot; '
-                     f'{fb["bytes"]/1e6:,.1f} MB &middot; peak {fb["peak_gb"]:.1f} GB')
         else:
+            why = ("It serialises the whole figure and then draws in the browser, "
+                   "so there is no half-drawn canvas to keep — only an unparseable "
+                   "fragment of a file." if lib == "plotly" else
+                   "There is no partially rendered output to keep.")
             body = ('<div class="miss"><p class="big">no chart</p>'
                     f'<p>{label} had not finished after {timeout:.0f} seconds, '
-                    f'so it was stopped.</p></div>')
+                    f'so it was stopped. {why}</p></div>')
             stats = "killed before it produced anything"
         if rec.get("partial_bytes"):
             gb = rec["partial_bytes"] / 1e9
@@ -244,9 +230,6 @@ def main() -> None:
     ap.add_argument("--timeout", type=float, default=20.0)
     ap.add_argument("--port", type=int, default=8899)
     ap.add_argument("--no-open", action="store_true")
-    ap.add_argument("--fallback-n", type=int, default=5_000_000,
-                    help="on timeout, retry that library at this size so the page "
-                         "can show how far it got (0 disables)")
     ap.add_argument("--keep-data", action="store_true",
                     help="keep the generated .npy columns for a re-run")
     args = ap.parse_args()
@@ -254,7 +237,7 @@ def main() -> None:
 
     os.makedirs(DEMO, exist_ok=True)
     for lib, _, _ in LIBS:
-        for stem in (lib, f"{lib}_fallback", f"{lib}_partial"):
+        for stem in (lib, f"{lib}_partial"):
             for ext in ("html", "png"):
                 p = os.path.join(DEMO, f"{stem}.{ext}")
                 if os.path.exists(p):
@@ -290,13 +273,6 @@ def main() -> None:
                       f"{pr['drawn']/1e6:,.0f}M of {n/1e6:,.0f}M drawn"
                       if pr.get("status") == "partial" else
                       f"{'—':>7}     no partial render", flush=True)
-            elif args.fallback_n and args.fallback_n < n:
-                print(f"  {'  ...retrying at ' + format(args.fallback_n, ',') + ' points':<40}",
-                      end="", flush=True)
-                fb = run_one(lib, timeout, limit=args.fallback_n, suffix="_fallback")
-                rec["fallback"] = fb
-                print(f"{fb['total']:7.2f} s" if fb["status"] == "ok"
-                      else f"{'—':>7}     also out of time", flush=True)
         else:
             print(f"{'—':>7}     failed: {rec.get('error','')[:60]}", flush=True)
 
@@ -306,8 +282,6 @@ def main() -> None:
             f"those arrays into a finished chart file. "
             + (f"{len(finished)} of 3 made it."
                if len(finished) < 3 else "All three made it."))
-    fell_back = [l for l, _, _ in LIBS
-                 if results[l].get("fallback", {}).get("status") == "ok"]
     footer = (
         "The points are the real 1,306,127-cell mouse brain UMAP (10x Genomics, E18) "
         "tiled with Gaussian jitter — the structure is real, the individual points "
@@ -321,11 +295,6 @@ def main() -> None:
            "region blank."
            if any(results[l].get("partial", {}).get("status") == "partial"
                   for l, _, _ in LIBS) else "")
-        + (" Where a library ran out of time, it was given the same budget again at "
-           f"{args.fallback_n:,} points so the panel can show something real it "
-           "actually finished. That smaller run is not its maximum — it is one "
-           "sample point, labelled with the fraction of the data it covers."
-           if fell_back else "")
     )
     panels = "".join(panel(l, lab, col, results[l], timeout) for l, lab, col in LIBS)
     page = PAGE.format(n=n, lede=lede, panels=panels, footer=footer)

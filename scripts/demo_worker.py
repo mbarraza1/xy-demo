@@ -98,8 +98,6 @@ def main() -> None:
     ap.add_argument("--lib", required=True, choices=["xy", "plotly", "matplotlib"])
     ap.add_argument("--data", required=True, help="directory holding x/y/c .npy")
     ap.add_argument("--out", required=True, help="output directory")
-    ap.add_argument("--limit", type=int, default=0,
-                    help="render only the first N points (fallback runs)")
     ap.add_argument("--suffix", default="",
                     help="appended to the output filename")
     ap.add_argument("--partial-budget", type=float, default=0.0,
@@ -116,8 +114,6 @@ def main() -> None:
     x = np.load(os.path.join(args.data, "x.npy"), mmap_mode="r")
     y = np.load(os.path.join(args.data, "y.npy"), mmap_mode="r")
     c = np.load(os.path.join(args.data, "c.npy"), mmap_mode="r")
-    if args.limit:
-        x, y, c = x[:args.limit], y[:args.limit], c[:args.limit]
     n = int(x.shape[0])
     title = f"{n:,} points"
     rec: dict = {"lib": args.lib, "n": n}
