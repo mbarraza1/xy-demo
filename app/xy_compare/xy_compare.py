@@ -250,12 +250,25 @@ def xy_live_section() -> rx.Component:
                 color="var(--text-secondary)", font_size="0.92rem", line_height="1.7",
             ),
             rx.text(
-                "Drill-down to exact rows is a live-kernel feature: it needs a notebook "
-                "widget or a framework adapter with a running backend, where the "
-                "canonical columns are still in Python and the chart can request a "
-                "refined window. That path is documented by XY and is not what this "
-                "frame measures - this frame is the exported-file path, and its "
-                "behaviour above is what was observed in the browser.",
+                "This is a property of the export, not of the point count. Measured "
+                "side by side on the same 10-million-point cloud: the exported file "
+                "made zero network requests at any zoom and fell back to its sample, "
+                "while the same data served through the adapter's state-backed path "
+                "(",
+                rx.code("@rxy.data"),
+                ") pulled 0.21 MB and then 1.24 MB over the app websocket as the view "
+                "tightened, showed no sample badge at all, and resolved a dense field "
+                "of individual points where the file showed a few hundred. Drill-down "
+                "works; it just needs a process to ask.",
+                color="var(--text-secondary)", font_size="0.92rem", line_height="1.7",
+                margin_top="0.7rem",
+            ),
+            rx.text(
+                "The cost of keeping that process is linear and measured: XY's "
+                "canonical store is exactly 16 bytes per point - two float64 columns - "
+                "so a live 500-million-point chart holds 8.0 GB resident for as long as "
+                "the chart exists, on top of whatever the source arrays cost to build "
+                "it. That is a memory budget, not an architectural ceiling.",
                 color="var(--text-secondary)", font_size="0.92rem", line_height="1.7",
                 margin_top="0.7rem",
             ),
@@ -801,11 +814,18 @@ def verdict_section() -> rx.Component:
                 "points - the same budget at 10 million points as at 500 million - and "
                 "nothing else. Zoom past the grid's resolution and it re-bins from that "
                 "sample, which XY labels honestly in the corner but which looks like a "
-                "nearly empty plot. No further requests are made, because there is no "
-                "Python process to make them to. Resolving back to exact rows needs a "
-                "live kernel: a notebook widget or a framework adapter with a running "
-                "backend. If your deliverable is a file you email to someone, you are "
-                "shipping an overview, not a queryable dataset."),
+                "nearly empty plot. Measured against the identical data served through "
+                "the state-backed adapter, drill-down works fine - the difference is "
+                "the live process, not the point count. But if your deliverable is a "
+                "file you send to someone, you are shipping an overview, not a "
+                "queryable dataset, and the 1.9 MB is exactly why."),
+            point(
+                "Keep a live chart free",
+                "The canonical store is 16 bytes per point, dead linear across every "
+                "tier measured: 0.2 GB at 10M, 1.6 GB at 100M, 8.0 GB at 500M. A live "
+                "500M chart holds that 8 GB resident for as long as the chart exists. "
+                "Affordable on a workstation, awkward per-session on a shared server, "
+                "and the reason the exported file exists at all."),
             point(
                 "Show you the same picture a raster does",
                 "Above the density threshold XY draws an aggregate surface, not "
@@ -888,4 +908,8 @@ app = rx.App(
     style={},
     head_components=[rx.el.style(STYLESHEET)],
 )
-app.add_page(index, title="XY vs matplotlib vs Plotly - 1.3M cell UMAP")
+app.add_page(index, title="XY vs matplotlib vs Plotly - 500M point UMAP")
+
+# Probe route: does the live-kernel path drill down on zoom, unlike an export?
+from .live_probe import live_probe  # noqa: E402
+app.add_page(live_probe, route="/live", title="Live-kernel drill-down probe")

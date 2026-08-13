@@ -1,0 +1,31 @@
+{
+  "probe": "live vs exported drill-down, identical 10M point cloud",
+  "exported_file": {
+    "path": "results/big/xy_10000000_synthetic.html",
+    "ws_or_net_requests_after_load": 0,
+    "sample_badge": "sampled 8,222 of 10,000,000",
+    "rebinned_badge": true,
+    "result": "falls back to ~8.2k point sample at deep zoom"
+  },
+  "state_backed_adapter": {
+    "route": "/live via @rxy.data",
+    "ws_frames_after_load": 12,
+    "ws_mb_after_load": 1.09,
+    "zoom1_frames": 0,
+    "zoom2_frames": 3,
+    "zoom2_mb": 0.21,
+    "zoom3_frames": 8,
+    "zoom3_mb": 1.24,
+    "sample_badge": null,
+    "rebinned_badge": false,
+    "result": "resolves dense individual points from the backend"
+  },
+  "canonical_bytes_per_point": 16,
+  "live_resident_gb": {
+    "10M": 0.16,
+    "100M": 1.6,
+    "250M": 4.0,
+    "500M": 8.0
+  },
+  "conclusion": "drill-down is a property of having a live process, not of the point count"
+}
