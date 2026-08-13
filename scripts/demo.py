@@ -72,16 +72,19 @@ def generate(n: int) -> float:
     return time.perf_counter() - t0
 
 
-def run_one(lib: str, timeout: float) -> dict:
+def run_one(lib: str, timeout: float, limit: int = 0, suffix: str = "") -> dict:
     """One library, one process, one hard deadline."""
     cmd = [sys.executable, "scripts/demo_worker.py", "--lib", lib,
            "--data", DATA, "--out", DEMO]
+    if limit:
+        cmd += ["--limit", str(limit), "--suffix", suffix]
     t0 = time.perf_counter()
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
-        # Kill left a partial file behind; a half-written 4 GB HTML helps nobody.
-        for stale in (f"{lib}.html", f"{lib}.png"):
+        # Kill left a partial file behind; a half-written 4 GB HTML helps nobody,
+        # and a truncated PNG will not decode.
+        for stale in (f"{lib}{suffix}.html", f"{lib}{suffix}.png"):
             path = os.path.join(DEMO, stale)
             if os.path.exists(path):
                 os.remove(path)
@@ -119,10 +122,29 @@ def panel(lib: str, label: str, color: str, rec: dict, timeout: float) -> str:
             body = f'<iframe src="{rec["output"]}" loading="lazy"></iframe>'
     elif rec.get("status") == "timeout":
         badge = f'<span class="bad">still running at {timeout:.0f} s</span>'
-        stats = "killed before it produced anything"
-        body = ('<div class="miss"><p class="big">no chart</p>'
-                f'<p>{label} had not finished after {timeout:.0f} seconds, '
-                f'so it was stopped.</p></div>')
+        fb = rec.get("fallback")
+        if fb and fb.get("status") == "ok":
+            # It produced nothing at the headline size, so show what it DID
+            # manage inside the same budget - a real run, at a fraction of the
+            # data, labelled as exactly that.
+            pct = 100.0 * fb["n"] / rec["n"]
+            inner = (f'<img src="{fb["output"]}" alt="{label} at {fb["n"]:,} points">'
+                     if fb["kind"] == "png" else
+                     (f'<iframe src="{fb["output"]}" loading="lazy"></iframe>'
+                      if fb["bytes"] <= INLINE_LIMIT else
+                      f'<div class="miss"><p><strong>{fb["bytes"]/1e6:,.0f} MB</strong>'
+                      f' — too large to embed.</p><p><a href="{fb["output"]}" '
+                      f'target="_blank">Open in its own tab</a></p></div>'))
+            body = (f'<div class="fallback"><p class="tag">given the same '
+                    f'{timeout:.0f} s: {fb["n"]:,} points — {pct:.1f}% of the data'
+                    f'</p>{inner}</div>')
+            stats = (f'that {pct:.1f}% took {fb["total"]:.2f} s &middot; '
+                     f'{fb["bytes"]/1e6:,.1f} MB &middot; peak {fb["peak_gb"]:.1f} GB')
+        else:
+            body = ('<div class="miss"><p class="big">no chart</p>'
+                    f'<p>{label} had not finished after {timeout:.0f} seconds, '
+                    f'so it was stopped.</p></div>')
+            stats = "killed before it produced anything"
     else:
         badge = '<span class="bad">failed</span>'
         stats = rec.get("error", "")[:160]
@@ -161,6 +183,10 @@ PAGE = """<!doctype html><meta charset="utf-8"><title>{n:,} points, three ways</
             justify-content:center; }}
   iframe {{ width:100%; height:100%; border:0; }}
   img {{ max-width:100%; max-height:100%; object-fit:contain; }}
+  .fallback {{ width:100%; height:100%; display:flex; flex-direction:column; }}
+  .fallback .tag {{ margin:0 0 .5rem; font-size:.78rem; color:#eb6834;
+                    text-align:center; font-weight:600; }}
+  .fallback iframe, .fallback img {{ flex:1; min-height:0; }}
   .miss {{ text-align:center; color:var(--muted); padding:1.5rem; }}
   .miss .big {{ font-size:1.4rem; font-weight:600; color:#eb6834; margin:0 0 .4rem; }}
   .stats {{ color:var(--muted); font-size:.82rem; margin:.75rem 0 0;
@@ -184,6 +210,9 @@ def main() -> None:
     ap.add_argument("--timeout", type=float, default=20.0)
     ap.add_argument("--port", type=int, default=8899)
     ap.add_argument("--no-open", action="store_true")
+    ap.add_argument("--fallback-n", type=int, default=5_000_000,
+                    help="on timeout, retry that library at this size so the page "
+                         "can show how far it got (0 disables)")
     ap.add_argument("--keep-data", action="store_true",
                     help="keep the generated .npy columns for a re-run")
     args = ap.parse_args()
@@ -191,10 +220,11 @@ def main() -> None:
 
     os.makedirs(DEMO, exist_ok=True)
     for lib, _, _ in LIBS:
-        for ext in ("html", "png"):
-            p = os.path.join(DEMO, f"{lib}.{ext}")
-            if os.path.exists(p):
-                os.remove(p)
+        for stem in (lib, f"{lib}_fallback"):
+            for ext in ("html", "png"):
+                p = os.path.join(DEMO, f"{stem}.{ext}")
+                if os.path.exists(p):
+                    os.remove(p)
 
     print(f"\n  {n:,} points — each library gets {timeout:.0f} seconds\n", flush=True)
     need = not (args.keep_data and os.path.exists(os.path.join(DATA, "x.npy"))
@@ -211,11 +241,19 @@ def main() -> None:
     for lib, label, _ in LIBS:
         print(f"  {label:<40}", end="", flush=True)
         rec = run_one(lib, timeout)
+        rec["n"] = n
         results[lib] = rec
         if rec["status"] == "ok":
             print(f"{rec['total']:7.2f} s   {rec['bytes']/1e6:>9,.1f} MB", flush=True)
         elif rec["status"] == "timeout":
             print(f"{'—':>7}     still running at {timeout:.0f}s, killed", flush=True)
+            if args.fallback_n and args.fallback_n < n:
+                print(f"  {'  ...retrying at ' + format(args.fallback_n, ',') + ' points':<40}",
+                      end="", flush=True)
+                fb = run_one(lib, timeout, limit=args.fallback_n, suffix="_fallback")
+                rec["fallback"] = fb
+                print(f"{fb['total']:7.2f} s" if fb["status"] == "ok"
+                      else f"{'—':>7}     also out of time", flush=True)
         else:
             print(f"{'—':>7}     failed: {rec.get('error','')[:60]}", flush=True)
 
@@ -225,12 +263,20 @@ def main() -> None:
             f"those arrays into a finished chart file. "
             + (f"{len(finished)} of 3 made it."
                if len(finished) < 3 else "All three made it."))
+    fell_back = [l for l, _, _ in LIBS
+                 if results[l].get("fallback", {}).get("status") == "ok"]
     footer = (
         "The points are the real 1,306,127-cell mouse brain UMAP (10x Genomics, E18) "
         "tiled with Gaussian jitter — the structure is real, the individual points "
         "are manufactured. Arrays were generated once and memory-mapped into each "
         "worker, so the clock covers charting only, not data generation. A timeout "
-        "is not a crash: the library was still working when the deadline passed."
+        "is not a crash: the library was still working when the deadline passed, and "
+        "a half-written file cannot be rendered, so there is no partial chart to show."
+        + (" Where a library ran out of time, it was given the same budget again at "
+           f"{args.fallback_n:,} points so the panel can show something real it "
+           "actually finished. That smaller run is not its maximum — it is one "
+           "sample point, labelled with the fraction of the data it covers."
+           if fell_back else "")
     )
     panels = "".join(panel(l, lab, col, results[l], timeout) for l, lab, col in LIBS)
     page = PAGE.format(n=n, lede=lede, panels=panels, footer=footer)

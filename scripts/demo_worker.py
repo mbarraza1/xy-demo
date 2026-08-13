@@ -35,6 +35,10 @@ def main() -> None:
     ap.add_argument("--lib", required=True, choices=["xy", "plotly", "matplotlib"])
     ap.add_argument("--data", required=True, help="directory holding x/y/c .npy")
     ap.add_argument("--out", required=True, help="output directory")
+    ap.add_argument("--limit", type=int, default=0,
+                    help="render only the first N points (fallback runs)")
+    ap.add_argument("--suffix", default="",
+                    help="appended to the output filename")
     args = ap.parse_args()
 
     # mmap: the arrays are shared with the other workers and never copied here,
@@ -42,6 +46,8 @@ def main() -> None:
     x = np.load(os.path.join(args.data, "x.npy"), mmap_mode="r")
     y = np.load(os.path.join(args.data, "y.npy"), mmap_mode="r")
     c = np.load(os.path.join(args.data, "c.npy"), mmap_mode="r")
+    if args.limit:
+        x, y, c = x[:args.limit], y[:args.limit], c[:args.limit]
     n = int(x.shape[0])
     title = f"{n:,} points"
     rec: dict = {"lib": args.lib, "n": n}
@@ -65,7 +71,7 @@ def main() -> None:
         )
         rec["t_build"] = time.perf_counter() - t0
         t1 = time.perf_counter()
-        out = os.path.join(args.out, "xy.html")
+        out = os.path.join(args.out, f"xy{args.suffix}.html")
         chart.to_html(out)
         rec.update(t_export=time.perf_counter() - t1, output=os.path.basename(out),
                    kind="html")
@@ -82,7 +88,7 @@ def main() -> None:
                           paper_bgcolor="#fcfcfb")
         rec["t_build"] = time.perf_counter() - t0
         t1 = time.perf_counter()
-        out = os.path.join(args.out, "plotly.html")
+        out = os.path.join(args.out, f"plotly{args.suffix}.html")
         fig.write_html(out, include_plotlyjs=True, full_html=True)
         rec.update(t_export=time.perf_counter() - t1, output=os.path.basename(out),
                    kind="html")
@@ -102,7 +108,7 @@ def main() -> None:
         fig.tight_layout()
         rec["t_build"] = time.perf_counter() - t0
         t1 = time.perf_counter()
-        out = os.path.join(args.out, "matplotlib.png")
+        out = os.path.join(args.out, f"matplotlib{args.suffix}.png")
         fig.savefig(out, dpi=100, facecolor="#fcfcfb")
         rec.update(t_export=time.perf_counter() - t1, output=os.path.basename(out),
                    kind="png")
