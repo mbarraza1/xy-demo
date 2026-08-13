@@ -1,0 +1,8 @@
+import numpy as np
+import xy.pyplot as plt
+
+x = np.linspace(0, 10, 200)
+fig, ax = plt.subplots()
+ax.plot(x, np.sin(x), "r--", label="Signal")
+ax.legend()
+plt.show()

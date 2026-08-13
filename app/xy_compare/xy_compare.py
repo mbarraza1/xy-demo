@@ -250,16 +250,11 @@ def xy_live_section() -> rx.Component:
                 color="var(--text-secondary)", font_size="0.92rem", line_height="1.7",
             ),
             rx.text(
-                "This is a property of the export, not of the point count. Measured "
-                "side by side on the same 10-million-point cloud: the exported file "
-                "made zero network requests at any zoom and fell back to its sample, "
-                "while the same data served through the adapter's state-backed path "
-                "(",
+                "This is a property of the export, not of the point count - and the "
+                "next section proves it, with the same engine served by a live backend "
+                "through ",
                 rx.code("@rxy.data"),
-                ") pulled 0.21 MB and then 1.24 MB over the app websocket as the view "
-                "tightened, showed no sample badge at all, and resolved a dense field "
-                "of individual points where the file showed a few hundred. Drill-down "
-                "works; it just needs a process to ask.",
+                ". Drill-down works; it just needs a process to ask.",
                 color="var(--text-secondary)", font_size="0.92rem", line_height="1.7",
                 margin_top="0.7rem",
             ),
@@ -342,6 +337,47 @@ def render_ladder() -> rx.Component:
     )
 
 
+def live_drilldown_section() -> rx.Component:
+    """The other half of the trade: same engine, live process, real drill-down."""
+    from .live_chart import N as LIVE_N, live_chart
+    return section(
+        "1b. The same engine with a process behind it",
+        prose(
+            "The chart above is a file. This one is served by the running backend "
+            "through the adapter's state-backed path, and it answers the caveat above: ",
+            rx.text.strong("zooming here asks Python for a new view, and gets one."),
+            " The export made zero network requests at any zoom and fell back to its "
+            "8,200-point sample. This chart pulls fresh binary frames over the app "
+            "websocket as the view tightens - 1.09 MB at load, rising past 4.5 MB "
+            "through a deep zoom - and never shows the sample badge.",
+        ),
+        prose(
+            "One honest limit on what that buys you at this size. On a 10-million-point "
+            "cloud the same path resolved all the way down to a dense field of "
+            "individual markers. At 250 million it kept serving finer density windows "
+            "instead: this cloud is the embedding stacked 192 times, so a window has to "
+            "be roughly 192x smaller before it falls under XY's ~2M direct budget and "
+            "the point tier takes over. The refinement is real and measurable either "
+            "way; whether it reaches individual markers depends on how many points are "
+            "in view, not on how many exist.",
+        ),
+        card(live_chart(), pad="0.75rem"),
+        caption(
+            f"Running at {LIVE_N/1e6:,.0f} million points rather than 500 million, and "
+            f"the reason is memory, not capability. Measured on this machine, the "
+            f"backend holding this chart settles between 6.4 and 8.9 GB resident "
+            f"depending on how much it has been zoomed: {LIVE_N*16/1e9:.1f} GB of "
+            f"canonical store at XY's flat 16 bytes per point, about 3 GB of float32 "
+            f"source columns that are held rather than freed, and working buffers on "
+            f"top. Scaling that to 500M lands near 18 GB, past what this 36 GB machine "
+            f"keeps free - which is the whole reason this section runs at 250M and the "
+            f"file above runs at 500M. The columns are built once per process and "
+            f"shared across sessions; a second tab was measured and does not double it."
+        ),
+        subtitle="Hover returns a real row; zoom requests a refined window from Python.",
+    )
+
+
 def plotly_live_section() -> rx.Component:
     N = D.BIG_N
     status = D.big_status("plotly", N)
@@ -383,28 +419,34 @@ def plotly_live_section() -> rx.Component:
             "as many points, painted in 74 milliseconds, in 10.6 MB of heap."))
 
     frame = rx.fragment()
-    if last_ok:
-        frame = rx.cond(
-            PageState.plotly_requested,
-            rx.box(
-                rx.el.iframe(
-                    src="/plotly_best.html", width="100%", height="740px",
-                    style={"border": "1px solid var(--border)",
-                           "borderRadius": "12px", "background": "var(--surface)"},
-                ), width="100%"),
-            rx.box(
+    if last_ok and last_ok_rec:
+        # Deliberately a link, not an iframe. Embedding this inline was tried and
+        # it took the whole page down with it: 3.1 GB of JS heap in the host tab
+        # kills every other chart on the page, including the live one above.
+        frame = rx.box(
+            rx.text(
+                f"Opening this is genuinely expensive: {last_ok_rec['bytes_html']/1e6:,.0f} MB "
+                f"over the wire, about {last_ok_rec.get('t_render_ms', 0)/1000:,.1f} s "
+                f"before anything appears, and "
+                f"{last_ok_rec.get('js_heap_mb', 0)/1000:,.1f} GB of JS heap once it "
+                "does. It opens in its own tab on purpose - embedded inline it took "
+                "this page down with it, taking every other chart along.",
+                color="var(--text-secondary)", font_size="0.9rem", line_height="1.7",
+                margin_bottom="0.9rem", max_width="640px", text_align="center",
+            ),
+            rx.link(
                 rx.button(
-                    f"Load the largest working Plotly ({last_ok/1e6:,.0f}M points)",
-                    on_click=PageState.request_plotly, size="3",
+                    f"Open the largest working Plotly ({last_ok/1e6:,.0f}M points, "
+                    f"{last_ok_rec['bytes_html']/1e6:,.0f} MB) in a new tab",
+                    size="3",
                     style={"background": "var(--series-plotly)", "color": "#ffffff",
                            "cursor": "pointer"}),
-                rx.text("Loaded on demand - the pause is part of the measurement.",
-                        font_size="0.83rem", color="var(--muted)",
-                        margin_top="0.7rem"),
-                display="flex", flex_direction="column", align_items="center",
-                justify_content="center", height="240px",
-                background="var(--surface)", border="1px dashed var(--border)",
-                border_radius="12px", width="100%"),
+                href="/plotly_best.html", is_external=True,
+            ),
+            display="flex", flex_direction="column", align_items="center",
+            justify_content="center", padding="2rem 1.5rem",
+            background="var(--surface)", border="1px dashed var(--border)",
+            border_radius="12px", width="100%",
         )
 
     return section(
@@ -889,6 +931,7 @@ def index() -> rx.Component:
             headline_stats(),
             dataset_section(),
             xy_live_section(),
+            live_drilldown_section(),
             plotly_live_section(),
             matplotlib_section(),
             fidelity_section(),
@@ -909,7 +952,3 @@ app = rx.App(
     head_components=[rx.el.style(STYLESHEET)],
 )
 app.add_page(index, title="XY vs matplotlib vs Plotly - 500M point UMAP")
-
-# Probe route: does the live-kernel path drill down on zoom, unlike an export?
-from .live_probe import live_probe  # noqa: E402
-app.add_page(live_probe, route="/live", title="Live-kernel drill-down probe")
