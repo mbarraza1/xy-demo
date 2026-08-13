@@ -82,13 +82,16 @@ def run_one(lib: str, timeout: float, limit: int = 0, suffix: str = "") -> dict:
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
-        # Kill left a partial file behind; a half-written 4 GB HTML helps nobody,
-        # and a truncated PNG will not decode.
+        # A half-written 4 GB HTML will not parse and a truncated PNG will not
+        # decode, so the file is useless - but HOW FAR it got is worth keeping.
+        wrote = 0
         for stale in (f"{lib}{suffix}.html", f"{lib}{suffix}.png"):
             path = os.path.join(DEMO, stale)
             if os.path.exists(path):
+                wrote = max(wrote, os.path.getsize(path))
                 os.remove(path)
-        return {"lib": lib, "status": "timeout", "elapsed": timeout}
+        return {"lib": lib, "status": "timeout", "elapsed": timeout,
+                "partial_bytes": wrote}
     elapsed = time.perf_counter() - t0
     if proc.returncode != 0:
         tail = (proc.stderr or "").strip().splitlines()
@@ -101,6 +104,19 @@ def run_one(lib: str, timeout: float, limit: int = 0, suffix: str = "") -> dict:
                 "error": "no result from worker"}
     rec.update(status="ok", elapsed=elapsed)
     return rec
+
+
+def run_partial(lib: str, budget: float) -> dict:
+    """matplotlib only: draw the full dataset incrementally, keep the canvas."""
+    cmd = [sys.executable, "scripts/demo_worker.py", "--lib", lib,
+           "--data", DATA, "--out", DEMO, "--suffix", "_partial",
+           "--partial-budget", str(budget)]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=budget * 3 + 30)
+        return json.loads(proc.stdout.strip().splitlines()[-1])
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)[:160]}
 
 
 def panel(lib: str, label: str, color: str, rec: dict, timeout: float) -> str:
@@ -122,8 +138,19 @@ def panel(lib: str, label: str, color: str, rec: dict, timeout: float) -> str:
             body = f'<iframe src="{rec["output"]}" loading="lazy"></iframe>'
     elif rec.get("status") == "timeout":
         badge = f'<span class="bad">still running at {timeout:.0f} s</span>'
+        pr = rec.get("partial")
         fb = rec.get("fallback")
-        if fb and fb.get("status") == "ok":
+        if pr and pr.get("status") == "partial":
+            # A real partial render of the SAME points: the canvas as it stood
+            # when the clock ran out, not a smaller substitute plot.
+            pct = 100.0 * pr["drawn"] / rec["n"]
+            body = (f'<div class="fallback"><p class="tag">the canvas at '
+                    f'{timeout:.0f} s — {pr["drawn"]:,} of {rec["n"]:,} points '
+                    f'drawn ({pct:.1f}%)</p>'
+                    f'<img src="{pr["output"]}" alt="{label} partial render"></div>')
+            stats = (f'drawn incrementally so the unfinished canvas could be kept '
+                     f'&middot; peak {pr["peak_gb"]:.1f} GB')
+        elif fb and fb.get("status") == "ok":
             # It produced nothing at the headline size, so show what it DID
             # manage inside the same budget - a real run, at a fraction of the
             # data, labelled as exactly that.
@@ -145,6 +172,10 @@ def panel(lib: str, label: str, color: str, rec: dict, timeout: float) -> str:
                     f'<p>{label} had not finished after {timeout:.0f} seconds, '
                     f'so it was stopped.</p></div>')
             stats = "killed before it produced anything"
+        if rec.get("partial_bytes"):
+            gb = rec["partial_bytes"] / 1e9
+            stats = (f'wrote {gb:,.1f} GB of the full file before the clock ran out '
+                     f'— unparseable, discarded &middot; ' + stats)
     else:
         badge = '<span class="bad">failed</span>'
         stats = rec.get("error", "")[:160]
@@ -158,7 +189,7 @@ def panel(lib: str, label: str, color: str, rec: dict, timeout: float) -> str:
     </section>"""
 
 
-PAGE = """<!doctype html><meta charset="utf-8"><title>{n:,} points, three ways</title>
+PAGE = """<!doctype html><meta charset="utf-8"><title>E18 Mouse Brain scRNA-seq</title>
 <style>
   :root {{ color-scheme: light; --bg:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b;
            --muted:#898781; --line:rgba(11,11,11,.12); }}
@@ -168,7 +199,9 @@ PAGE = """<!doctype html><meta charset="utf-8"><title>{n:,} points, three ways</
   body {{ margin:0; background:var(--bg); color:var(--ink);
           font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif; }}
   .wrap {{ max-width:1400px; margin:0 auto; padding:2.5rem 1.5rem; }}
-  h1 {{ font-size:2rem; margin:0 0 .4rem; }}
+  h1 {{ font-size:2rem; margin:0 0 .2rem; }}
+  .sub {{ font-size:1.05rem; color:var(--muted); margin:0 0 1.25rem;
+          font-variant-numeric:tabular-nums; }}
   .lede {{ color:var(--muted); margin:0 0 2rem; max-width:70ch; }}
   .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(380px,1fr));
            gap:1.25rem; }}
@@ -195,7 +228,8 @@ PAGE = """<!doctype html><meta charset="utf-8"><title>{n:,} points, three ways</
             border-top:1px solid var(--line); padding-top:1.25rem; max-width:80ch; }}
 </style>
 <div class="wrap">
-  <h1>{n:,} points, three ways</h1>
+  <h1>E18 Mouse Brain scRNA-seq</h1>
+  <p class="sub">{n:,} points, three ways</p>
   <p class="lede">{lede}</p>
   <div class="grid">{panels}
   </div>
@@ -220,7 +254,7 @@ def main() -> None:
 
     os.makedirs(DEMO, exist_ok=True)
     for lib, _, _ in LIBS:
-        for stem in (lib, f"{lib}_fallback"):
+        for stem in (lib, f"{lib}_fallback", f"{lib}_partial"):
             for ext in ("html", "png"):
                 p = os.path.join(DEMO, f"{stem}.{ext}")
                 if os.path.exists(p):
@@ -247,7 +281,16 @@ def main() -> None:
             print(f"{rec['total']:7.2f} s   {rec['bytes']/1e6:>9,.1f} MB", flush=True)
         elif rec["status"] == "timeout":
             print(f"{'—':>7}     still running at {timeout:.0f}s, killed", flush=True)
-            if args.fallback_n and args.fallback_n < n:
+            if lib == "matplotlib":
+                print(f"  {'  ...partial render of the same 250M':<40}"
+                      .replace("250M", f"{n/1e6:,.0f}M"), end="", flush=True)
+                pr = run_partial(lib, timeout)
+                rec["partial"] = pr
+                print(f"{pr['elapsed']:7.2f} s   "
+                      f"{pr['drawn']/1e6:,.0f}M of {n/1e6:,.0f}M drawn"
+                      if pr.get("status") == "partial" else
+                      f"{'—':>7}     no partial render", flush=True)
+            elif args.fallback_n and args.fallback_n < n:
                 print(f"  {'  ...retrying at ' + format(args.fallback_n, ',') + ' points':<40}",
                       end="", flush=True)
                 fb = run_one(lib, timeout, limit=args.fallback_n, suffix="_fallback")
@@ -270,8 +313,14 @@ def main() -> None:
         "tiled with Gaussian jitter — the structure is real, the individual points "
         "are manufactured. Arrays were generated once and memory-mapped into each "
         "worker, so the clock covers charting only, not data generation. A timeout "
-        "is not a crash: the library was still working when the deadline passed, and "
-        "a half-written file cannot be rendered, so there is no partial chart to show."
+        "is not a crash: the library was still working when the deadline passed."
+        + (" matplotlib rasterises onto a canvas, so it was re-run drawing the same "
+           "points in chunks and the canvas was kept as it stood at the deadline — "
+           "a true partial render. Because the cloud is tiled copies of one "
+           "embedding, a partial draw thins the whole shape rather than leaving a "
+           "region blank."
+           if any(results[l].get("partial", {}).get("status") == "partial"
+                  for l, _, _ in LIBS) else "")
         + (" Where a library ran out of time, it was given the same budget again at "
            f"{args.fallback_n:,} points so the panel can show something real it "
            "actually finished. That smaller run is not its maximum — it is one "

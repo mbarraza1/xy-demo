@@ -98,8 +98,11 @@ def index() -> rx.Component:
 
     return rx.box(
         rx.box(
-            rx.heading("250 million points, three ways", size="8",
+            rx.heading("E18 Mouse Brain scRNA-seq", size="8",
                        color="var(--text)", line_height="1.15"),
+            rx.text("250 million points, three ways", font_size="1.05rem",
+                    color="var(--muted)", margin_top="0.25rem",
+                    class_name="tabular"),
             rx.text(
                 "A single-cell UMAP scaled to 250 million points, rendered by XY, "
                 "Plotly, and matplotlib on the same machine from the same arrays.",
@@ -180,4 +183,4 @@ def index() -> rx.Component:
 
 
 app = rx.App(head_components=[rx.el.style(STYLESHEET)])
-app.add_page(index, title="250 million points, three ways")
+app.add_page(index, title="E18 Mouse Brain scRNA-seq")

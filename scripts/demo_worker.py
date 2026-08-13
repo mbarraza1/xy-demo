@@ -25,6 +25,69 @@ W, H = 1000, 720          # fixed export size for Plotly and matplotlib
 FRAME_H = 520            # must match .frame height in demo.py's comparison page
 
 
+def partial_matplotlib(args) -> None:
+    """Draw the whole dataset in chunks and keep whatever made it onto the canvas.
+
+    matplotlib normally rasterises in one shot inside savefig(), so a run that is
+    killed leaves nothing. Drawing chunk by chunk with draw_artist() composites
+    each batch straight onto the Agg buffer, so the buffer at any moment is a
+    true partial render of the same points - not a different, smaller plot.
+
+    Axis limits are fixed up front from the full extent, because autoscaling
+    would shift the frame under every chunk. That scan is done before the clock
+    starts; only drawing is timed.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import LinearSegmentedColormap
+    from PIL import Image
+
+    x = np.load(os.path.join(args.data, "x.npy"), mmap_mode="r")
+    y = np.load(os.path.join(args.data, "y.npy"), mmap_mode="r")
+    c = np.load(os.path.join(args.data, "c.npy"), mmap_mode="r")
+    n = int(x.shape[0])
+    cmap = LinearSegmentedColormap.from_list("blues", BLUE_RAMP)
+
+    CHUNK = 2_000_000
+    head = slice(0, min(n, 20_000_000))          # extent from a bounded head read
+    xlo, xhi = float(x[head].min()), float(x[head].max())
+    ylo, yhi = float(y[head].min()), float(y[head].max())
+    clo, chi = float(c[head].min()), float(c[head].max())
+    padx, pady = 0.03 * (xhi - xlo), 0.03 * (yhi - ylo)
+
+    fig, ax = plt.subplots(figsize=(W / 100, H / 100), dpi=100)
+    ax.set_xlim(xlo - padx, xhi + padx)
+    ax.set_ylim(ylo - pady, yhi + pady)
+    ax.set_xlabel("UMAP 1")
+    ax.set_ylabel("UMAP 2")
+    ax.set_title(f"{n:,} points")
+    fig.tight_layout()
+    fig.canvas.draw()                             # background, axes, labels
+
+    drawn = 0
+    t0 = time.perf_counter()
+    deadline = t0 + args.partial_budget
+    for start in range(0, n, CHUNK):
+        if time.perf_counter() >= deadline:
+            break
+        sl = slice(start, min(start + CHUNK, n))
+        coll = ax.scatter(x[sl], y[sl], c=c[sl], cmap=cmap, s=2.0, alpha=0.55,
+                          linewidths=0, vmin=clo, vmax=chi)
+        ax.draw_artist(coll)                      # composite onto the live buffer
+        coll.remove()                             # keep redraw cost per-chunk flat
+        drawn = sl.stop
+    elapsed = time.perf_counter() - t0
+
+    out = os.path.join(args.out, f"matplotlib{args.suffix}.png")
+    Image.fromarray(np.asarray(fig.canvas.buffer_rgba())).convert("RGB").save(out)
+    print(json.dumps({
+        "lib": "matplotlib", "n": n, "status": "partial", "drawn": drawn,
+        "elapsed": elapsed, "output": os.path.basename(out), "kind": "png",
+        "bytes": os.path.getsize(out), "peak_gb": peak_gb(),
+    }))
+
+
 def peak_gb() -> float:
     raw = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     return raw / 1e9 if sys.platform == "darwin" else raw / 1e6
@@ -39,7 +102,14 @@ def main() -> None:
                     help="render only the first N points (fallback runs)")
     ap.add_argument("--suffix", default="",
                     help="appended to the output filename")
+    ap.add_argument("--partial-budget", type=float, default=0.0,
+                    help="matplotlib only: draw the FULL dataset incrementally and "
+                         "snapshot the canvas after this many seconds")
     args = ap.parse_args()
+
+    if args.partial_budget and args.lib == "matplotlib":
+        partial_matplotlib(args)
+        return
 
     # mmap: the arrays are shared with the other workers and never copied here,
     # so the clock below measures charting rather than data loading.
