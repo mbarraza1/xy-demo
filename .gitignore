@@ -1,0 +1,27 @@
+# Raw and derived data — regenerate with scripts/01 and scripts/02
+data/
+.venv/
+
+# Reflex build output
+app/.web/
+app/.states/
+app/assets/external/
+
+# Compiled reflex_xy binary chart payloads — regenerated from data/ on `reflex run`
+app/assets/xy/
+
+# Large page assets copied in for the demo — regenerate with scripts/03 and 06
+app/assets/plotly_1306127.html
+app/assets/*.png
+
+# Benchmark artifacts (regenerate with scripts/03)
+results/artifacts/
+results/smoke/
+results/*.log
+
+# Scratch verification screenshots; results/page_final.png is kept as documentation
+results/sec_*.png
+results/page_full.png
+
+__pycache__/
+*.pyc

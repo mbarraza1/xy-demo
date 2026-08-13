@@ -1,0 +1,212 @@
+[
+  {
+    "file": "plotly_100000.html",
+    "status": "ok",
+    "t_load_ms": 668,
+    "t_canvas_ms": 693.7000002861023,
+    "t_quiet_ms": 733.2,
+    "gl_renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Pro, Unspecified Version)",
+    "pan": {
+      "fps": 116.7,
+      "p95_frame_ms": 8.7,
+      "median_frame_ms": 8.3,
+      "n_frames": 70
+    },
+    "zoom": {
+      "fps": 120.0,
+      "p95_frame_ms": 8.9,
+      "median_frame_ms": 8.3,
+      "n_frames": 159
+    },
+    "js_heap_mb": 50.4
+  },
+  {
+    "file": "plotly_1000000.html",
+    "status": "ok",
+    "t_load_ms": 1847,
+    "t_canvas_ms": 1878,
+    "t_quiet_ms": 1913.5,
+    "gl_renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Pro, Unspecified Version)",
+    "pan": {
+      "fps": 94.4,
+      "p95_frame_ms": 8.5,
+      "median_frame_ms": 8.3,
+      "n_frames": 70
+    },
+    "zoom": {
+      "fps": 120.5,
+      "p95_frame_ms": 9.3,
+      "median_frame_ms": 8.3,
+      "n_frames": 159
+    },
+    "js_heap_mb": 435.0
+  },
+  {
+    "file": "plotly_1306127.html",
+    "status": "ok",
+    "t_load_ms": 2316,
+    "t_canvas_ms": 2352.7000002861023,
+    "t_quiet_ms": 2389.3,
+    "gl_renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Pro, Unspecified Version)",
+    "pan": {
+      "fps": 91.6,
+      "p95_frame_ms": 9.1,
+      "median_frame_ms": 8.3,
+      "n_frames": 71
+    },
+    "zoom": {
+      "fps": 120.0,
+      "p95_frame_ms": 8.8,
+      "median_frame_ms": 8.3,
+      "n_frames": 159
+    },
+    "js_heap_mb": 553.0
+  },
+  {
+    "file": "plotly_250000.html",
+    "status": "ok",
+    "t_load_ms": 849,
+    "t_canvas_ms": 865.2000002861023,
+    "t_quiet_ms": 901.4,
+    "gl_renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Pro, Unspecified Version)",
+    "pan": {
+      "fps": 110.6,
+      "p95_frame_ms": 8.7,
+      "median_frame_ms": 8.3,
+      "n_frames": 70
+    },
+    "zoom": {
+      "fps": 119.9,
+      "p95_frame_ms": 8.9,
+      "median_frame_ms": 8.3,
+      "n_frames": 159
+    },
+    "js_heap_mb": 91.7
+  },
+  {
+    "file": "plotly_500000.html",
+    "status": "ok",
+    "t_load_ms": 1223,
+    "t_canvas_ms": 1254.5,
+    "t_quiet_ms": 1289.1,
+    "gl_renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Pro, Unspecified Version)",
+    "pan": {
+      "fps": 105.0,
+      "p95_frame_ms": 8.9,
+      "median_frame_ms": 8.3,
+      "n_frames": 70
+    },
+    "zoom": {
+      "fps": 120.1,
+      "p95_frame_ms": 9,
+      "median_frame_ms": 8.3,
+      "n_frames": 158
+    },
+    "js_heap_mb": 167.0
+  },
+  {
+    "file": "xy_100000.html",
+    "status": "ok",
+    "t_load_ms": 70,
+    "t_canvas_ms": 89.40000009536743,
+    "t_quiet_ms": 130.8,
+    "gl_renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Pro, Unspecified Version)",
+    "pan": {
+      "fps": 116.5,
+      "p95_frame_ms": 8.5,
+      "median_frame_ms": 8.3,
+      "n_frames": 69
+    },
+    "zoom": {
+      "fps": 120.1,
+      "p95_frame_ms": 8.8,
+      "median_frame_ms": 8.3,
+      "n_frames": 154
+    },
+    "js_heap_mb": 11.2
+  },
+  {
+    "file": "xy_1000000.html",
+    "status": "ok",
+    "t_load_ms": 128,
+    "t_canvas_ms": 143.5,
+    "t_quiet_ms": 182.5,
+    "gl_renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Pro, Unspecified Version)",
+    "pan": {
+      "fps": 116.7,
+      "p95_frame_ms": 8.8,
+      "median_frame_ms": 8.3,
+      "n_frames": 68
+    },
+    "zoom": {
+      "fps": 120.0,
+      "p95_frame_ms": 8.9,
+      "median_frame_ms": 8.3,
+      "n_frames": 155
+    },
+    "js_heap_mb": 53.5
+  },
+  {
+    "file": "xy_1306127.html",
+    "status": "ok",
+    "t_load_ms": 140,
+    "t_canvas_ms": 155.7000002861023,
+    "t_quiet_ms": 193.4,
+    "gl_renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Pro, Unspecified Version)",
+    "pan": {
+      "fps": 116.6,
+      "p95_frame_ms": 9,
+      "median_frame_ms": 8.3,
+      "n_frames": 68
+    },
+    "zoom": {
+      "fps": 119.2,
+      "p95_frame_ms": 9,
+      "median_frame_ms": 8.3,
+      "n_frames": 155
+    },
+    "js_heap_mb": 68.0
+  },
+  {
+    "file": "xy_250000.html",
+    "status": "ok",
+    "t_load_ms": 64,
+    "t_canvas_ms": 79.5,
+    "t_quiet_ms": 116.6,
+    "gl_renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Pro, Unspecified Version)",
+    "pan": {
+      "fps": 116.7,
+      "p95_frame_ms": 8.5,
+      "median_frame_ms": 8.3,
+      "n_frames": 68
+    },
+    "zoom": {
+      "fps": 119.9,
+      "p95_frame_ms": 8.9,
+      "median_frame_ms": 8.3,
+      "n_frames": 153
+    },
+    "js_heap_mb": 18.2
+  },
+  {
+    "file": "xy_500000.html",
+    "status": "ok",
+    "t_load_ms": 83,
+    "t_canvas_ms": 98.40000009536743,
+    "t_quiet_ms": 134.5,
+    "gl_renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Pro, Unspecified Version)",
+    "pan": {
+      "fps": 116.8,
+      "p95_frame_ms": 8.6,
+      "median_frame_ms": 8.3,
+      "n_frames": 68
+    },
+    "zoom": {
+      "fps": 120.0,
+      "p95_frame_ms": 8.7,
+      "median_frame_ms": 8.3,
+      "n_frames": 155
+    },
+    "js_heap_mb": 29.4
+  }
+]
