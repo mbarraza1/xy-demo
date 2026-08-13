@@ -5,6 +5,7 @@ from __future__ import annotations
 import reflex as rx
 
 from . import data as D
+from .live_chart import live_chart
 from .theme import STYLESHEET
 
 N = 250_000_000
@@ -108,21 +109,20 @@ def index() -> rx.Component:
 
             # ---- the chart ----
             rx.box(
-                rx.el.iframe(
-                    src="/xy_250M.html", width="100%", height="720px",
-                    style={"border": "1px solid var(--border)",
-                           "borderRadius": "12px", "background": "var(--surface)"},
-                ),
+                live_chart(),
                 width="100%", margin_top="2rem",
+                background="var(--surface)", border="1px solid var(--border)",
+                border_radius="12px", padding="0.75rem",
             ),
             rx.text(
-                f"Live: drag to pan, scroll to zoom. This is XY's exported chart - "
-                f"a {D.big_at('xy', N, 'bytes_html', )/1e6:.1f} MB file that paints in "
-                f"{xy_paint:,.0f} ms and interacts entirely in the browser. Above about "
-                f"2 million points XY sends a screen-bounded density surface instead of "
-                f"per-point geometry, which is why the file does not grow with the data. "
-                f"Deep zoom falls back to an ~8,200-point sample, because the file "
-                f"carries the surface rather than the rows.",
+                "Live: drag to pan, scroll to zoom. Served by the running backend, "
+                "which re-bins a real density window for each viewport - so the plot "
+                "stays populated as you zoom. XY's exported file paints faster "
+                f"({xy_paint:,.0f} ms) and needs no server at all, but it cannot be "
+                "zoomed at this size: on zoom the client asks the kernel for a "
+                "viewport-matched view, and a file has no kernel, so it falls through "
+                "to the ~8,200-point sample baked into it. Measured, that drops the "
+                "plot from 43% ink to 3.7% on the first wheel notch.",
                 font_size="0.85rem", color="var(--muted)", margin_top="0.75rem",
                 line_height="1.65",
             ),
