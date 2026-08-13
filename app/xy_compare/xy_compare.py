@@ -359,11 +359,15 @@ def live_drilldown_section() -> rx.Component:
             rx.text.em("work"),
             " is not: every refine re-scans and re-bins the visible subset across the "
             "source rows, so zoom latency tracks the total point count even though the "
-            "bytes on the wire do not. The same section built at 250 million took about "
-            "26 seconds to first paint and stalled 0.9 to 1.7 seconds on every zoom "
-            "that left the cached window. At 250 million it also never reached the "
-            "point tier - that cloud is the embedding stacked 192 times, so a window "
-            "must be roughly 192x smaller before it drops under XY's ~2M direct budget.",
+            "bytes on the wire do not. First paint is fast either way - this chart "
+            "appears about 0.6 s after navigation, and the Python side that feeds it "
+            "(tiling 10M points, jittering them, and handing them to XY's canonical "
+            "store) costs 0.20 s end to end. It is the zoom that pays: a refine here "
+            "answers in roughly half a second, while the same section built at 250 "
+            "million stalled 0.9 to 1.7 seconds on every zoom that left the cached "
+            "window. At 250 million it also never reached the point tier - that cloud "
+            "is the embedding stacked 192 times, so a window must be roughly 192x "
+            "smaller before it drops under XY's ~2M direct budget.",
         ),
         card(live_chart(), pad="0.75rem"),
         caption(

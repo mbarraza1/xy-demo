@@ -26,10 +26,11 @@ import xy
 from .theme import BLUE_RAMP
 
 # 10M, not 250M. The live path re-scans source rows on every refine, so zoom
-# latency tracks the total point count even though the payload does not: at 250M
-# a first load took ~26 s and each uncached zoom stalled 0.9-1.7 s. This section
-# exists to prove drill-down resolves to individual markers, which was only
-# observed at 10M anyway; the 500M export above carries the scale argument.
+# latency tracks the total point count even though the payload does not: ~484 ms
+# median refine here against 0.9-1.7 s at 250M. First paint is ~0.6 s either way
+# and the Python build below costs 0.20 s, so the cost is entirely in refining.
+# This section exists to prove drill-down resolves to individual markers, which
+# was only observed at 10M; the 500M export above carries the scale argument.
 N = 10_000_000
 
 _COLUMNS: dict | None = None

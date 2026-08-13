@@ -120,11 +120,12 @@ is safe to stop it and restart. Reduce `SIZES` in that script if you have less R
   That is the correct trade at this scale, but it is a trade.
 - **The payload is screen-bounded; the work is not.** On the live path, every refine
   re-scans and re-bins the visible subset across the source rows, so zoom latency
-  tracks the total point count even though the bytes on the wire do not. Measured:
-  a live 250M chart took ~26 s to first paint and stalled 0.9–1.7 s on each uncached
-  zoom, at 6.4–8.9 GB resident. The same section at 10M loads in 7.9 s with a median
-  zoom response of 484 ms at 0.85 GB. This is XY's own documented boundary — ingest,
-  range scans, binning, and decimation stay row-dependent.
+  tracks the total point count even though the bytes on the wire do not. First paint
+  is not the problem — the live 10M chart appears ~0.6 s after navigation (27 ms
+  DOMContentLoaded, 61 ms load event), and the whole Python side that feeds it costs
+  0.20 s. Zoom is where it shows: ~484 ms median refine at 10M / 0.85 GB resident,
+  against 0.9–1.7 s at 250M / 6.4–8.9 GB. This is XY's own documented boundary —
+  ingest, range scans, binning, and decimation stay row-dependent.
 - **The exported file has no drill-down.** This is the biggest asterisk on the 2 MB
   headline. A standalone XY export carries a 512×384 density grid plus a deterministic
   sample of ~8,200 points — the same budget at 10M points as at 500M — and nothing

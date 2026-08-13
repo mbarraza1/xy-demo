@@ -15,8 +15,8 @@ chart = xy.scatter_chart(
 )
 
 # Export to HTML
-chart.to_html("10m_points.html")
+chart.to_html("10m.html")
 
 elapsed = time.time() - start_time
 print(f"Done in {elapsed:.2f} seconds!")
-print("Open '10m_points.html' in your browser to inspect pan and zoom.")
+print("Open '10m.html' in your browser to inspect pan and zoom.")
