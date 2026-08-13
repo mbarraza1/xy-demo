@@ -1,8 +1,4 @@
-"""Stage the artifacts the Reflex page serves, choosing them from the measurements.
-
-Which Plotly file gets embedded is not a judgement call - it is whichever one the
-browser actually painted, as recorded by 10_biginteraction.py.
-"""
+"""Stage the single artifact the Reflex page serves: XY's 250M export."""
 
 from __future__ import annotations
 
@@ -13,6 +9,7 @@ import shutil
 BIG = "results/big"
 ART = "results/artifacts"
 ASSETS = "app/assets"
+PAGE_N = 250_000_000   # the point count the page embeds
 
 
 def load(path, default):
@@ -38,38 +35,20 @@ def main() -> None:
     sweep = load("results/bigsweep.json", [])
     inter = load("results/biginteraction.json", [])
 
-    # --- XY: the 500M export and its raster ---
-    copy(f"{BIG}/xy_500000000_synthetic.html", "xy_500M.html")
-    copy(f"{BIG}/xy_500000000_synthetic.png", "xy_big.png")
+    # The page embeds exactly one chart: XY's 250M export. It is the only version
+    # that is both interactive and fast - the state-backed live path costs 16
+    # bytes/point resident and ~1 s per zoom at this size.
+    if not copy(f"{BIG}/xy_{PAGE_N}_synthetic.html", "xy_250M.html"):
+        print(f"  run: python scripts/bench_big.py --lib xy --n {PAGE_N} --keep")
 
-    # --- matplotlib: the largest raster actually produced ---
-    mpl = sorted((r for r in sweep
-                  if r["lib"] == "matplotlib" and r.get("status") == "ok"),
-                 key=lambda r: r["n"])
-    if mpl:
-        n = mpl[-1]["n"]
-        if not copy(f"{BIG}/matplotlib_{n}_synthetic.png", "matplotlib_big.png"):
-            for r in reversed(mpl[:-1]):
-                if copy(f"{BIG}/matplotlib_{r['n']}_synthetic.png",
-                        "matplotlib_big.png"):
-                    break
-
-    # --- Plotly: the largest export that actually painted a canvas ---
-    rendered = sorted((r for r in inter
-                       if r["lib"] == "plotly" and r.get("rendered")),
-                      key=lambda r: r["n"])
-    if rendered:
-        best = rendered[-1]
-        copy(f"{BIG}/{best['file']}", "plotly_best.html")
-        print(f"  -> embedding Plotly at {best['n']:,} points "
-              f"(largest that rendered)")
-    else:
-        print("  no Plotly artifact rendered; page will omit the live frame")
-
-    # --- fidelity panels + the data the page reads ---
-    copy(f"{ART}/fidelity_matplotlib_zoom.png", "fidelity_matplotlib_zoom.png")
-    copy(f"{ART}/fidelity_xy_zoom.png", "fidelity_xy_zoom.png")
     copy("results/report_data.json", "report_data.json")
+
+    # Everything else the sweep produced stays in results/ and is referenced by
+    # the page only as numbers, not as embedded files.
+    n_sweep = sum(1 for r in sweep if r.get("status") == "ok")
+    n_inter = sum(1 for r in inter if r.get("rendered"))
+    print(f"  ({n_sweep} sweep cases and {n_inter} rendered browser cases "
+          f"feed the page's tables from JSON)")
 
 
 if __name__ == "__main__":

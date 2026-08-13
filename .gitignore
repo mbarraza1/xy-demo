@@ -13,6 +13,7 @@ app/assets/xy/
 # Page assets staged by scripts/11_assets.py from results/ — some are hundreds of MB.
 # report_data.json is the exception: it is small and is what the page reads.
 app/assets/*.html
+# (xy_250M.html is the page's chart; regenerate with scripts/11_assets.py)
 app/assets/*.png
 
 # Benchmark artifacts (regenerate with scripts/03, 09, 10)
