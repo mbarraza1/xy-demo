@@ -1,0 +1,99 @@
+[
+  {
+    "bytes_html": 1885778,
+    "t_load_ms": 93,
+    "t_render_ms": 114,
+    "rendered": true,
+    "status": "ok",
+    "js_heap_mb": 10.6,
+    "lib": "xy",
+    "n": 10000000,
+    "file": "xy_10000000_synthetic.html"
+  },
+  {
+    "bytes_html": 173331216,
+    "t_load_ms": 15381,
+    "t_render_ms": 15594,
+    "rendered": true,
+    "status": "ok",
+    "js_heap_mb": 3140.0,
+    "lib": "plotly",
+    "n": 10000000,
+    "file": "plotly_10000000_synthetic.html"
+  },
+  {
+    "bytes_html": 1884958,
+    "t_load_ms": 73,
+    "t_render_ms": 74,
+    "rendered": true,
+    "status": "ok",
+    "js_heap_mb": 10.6,
+    "lib": "xy",
+    "n": 25000000,
+    "file": "xy_25000000_synthetic.html"
+  },
+  {
+    "bytes_html": 425995826,
+    "status": "load_failed",
+    "seconds": 35.8,
+    "error": "TargetClosedError: Page.goto: Page crashed\nCall log:\n  - navigating to \"http://127.0.0.1:8783/plotly_25000000_synthetic.html\", waiting until \"load\"\n",
+    "lib": "plotly",
+    "n": 25000000,
+    "file": "plotly_25000000_synthetic.html"
+  },
+  {
+    "bytes_html": 1888044,
+    "t_load_ms": 58,
+    "t_render_ms": 60,
+    "rendered": true,
+    "status": "ok",
+    "js_heap_mb": 10.6,
+    "lib": "xy",
+    "n": 50000000,
+    "file": "xy_50000000_synthetic.html"
+  },
+  {
+    "bytes_html": 847121202,
+    "t_load_ms": 3109,
+    "t_render_ms": null,
+    "rendered": false,
+    "status": "never_rendered",
+    "js_heap_mb": 13.4,
+    "lib": "plotly",
+    "n": 50000000,
+    "file": "plotly_50000000_synthetic.html"
+  },
+  {
+    "bytes_html": 1885859,
+    "t_load_ms": 59,
+    "t_render_ms": 61,
+    "rendered": true,
+    "status": "ok",
+    "js_heap_mb": 10.6,
+    "lib": "xy",
+    "n": 100000000,
+    "file": "xy_100000000_synthetic.html"
+  },
+  {
+    "bytes_html": 1689414756,
+    "t_load_ms": 4907,
+    "t_render_ms": null,
+    "rendered": false,
+    "status": "never_rendered",
+    "js_heap_mb": 13.4,
+    "lib": "plotly",
+    "n": 100000000,
+    "file": "plotly_100000000_synthetic.html"
+  },
+  {
+    "bytes_html": 1885751,
+    "t_load_ms": 72,
+    "t_render_ms": 74,
+    "rendered": true,
+    "status": "ok",
+    "js_heap_mb": 10.6,
+    "lib": "xy",
+    "n": 500000000,
+    "file": "xy_500000000_synthetic.html"
+  }
+]

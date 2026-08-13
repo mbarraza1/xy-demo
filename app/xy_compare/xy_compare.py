@@ -92,45 +92,88 @@ def header() -> rx.Component:
     return rx.box(
         rx.text("BENCHMARK", letter_spacing="0.12em", font_size="0.75rem",
                 font_weight="600", color="var(--series-xy)"),
-        rx.heading("Plotting 1.3 million cells three ways",
+        rx.heading("Plotting 500 million points three ways",
                    size="9", margin_top="0.5rem", color="var(--text)",
                    line_height="1.15"),
         rx.text(
-            "A single-cell RNA-seq UMAP of 1,306,127 mouse brain cells, rendered "
-            "with XY, matplotlib, and Plotly - and measured end to end.",
+            "A single-cell UMAP scaled to half a billion points, rendered with XY, "
+            "matplotlib, and Plotly - and measured until two of them stop working.",
             font_size="1.15rem", color="var(--text-secondary)",
-            margin_top="0.9rem", line_height="1.6", max_width="720px",
+            margin_top="0.9rem", line_height="1.6", max_width="740px",
         ),
-        margin_bottom="2.5rem",
+        margin_bottom="1.75rem",
+    )
+
+
+def provenance_note() -> rx.Component:
+    """The one thing a reader must not have to hunt for."""
+    return rx.box(
+        rx.text("How these 500 million points were made",
+                font_weight="600", color="var(--text)", margin_bottom="0.4rem"),
+        rx.text(
+            "There are only 1,306,127 cells in the world's largest single 10x run, "
+            "so a 500-million-point plot cannot be a UMAP of cells. The point cloud "
+            "here is the real 1.3M-cell embedding replicated 383 times with Gaussian "
+            "jitter (sigma = 0.06). ",
+            rx.text.strong("The structure is real; the individual points are "
+                           "manufactured."),
+            " The first copy is the untouched embedding. Nothing about the rendering "
+            "comparison depends on the points being real - every library gets the "
+            "identical array - but no biological claim should be read off this page's "
+            "hero figure. The pipeline that produced the underlying embedding is real "
+            "and is described below.",
+            color="var(--text-secondary)", font_size="0.92rem", line_height="1.7",
+        ),
+        background="var(--surface)",
+        border="1px solid var(--border)",
+        border_left="3px solid var(--series-matplotlib)",
+        border_radius="10px", padding="1.1rem 1.25rem", margin_bottom="2.5rem",
     )
 
 
 def headline_stats() -> rx.Component:
-    h = D.HEADLINE
-    return rx.flex(
-        stat(f"{h['load_speedup']:.0f}x", "faster to first plot",
-             f"{h['xy_load_ms']:.0f} ms vs {h['plotly_load_ms']:.0f} ms "
-             f"for Plotly, in a real browser"),
-        stat(f"{h['heap_ratio']:.1f}x", "less browser memory",
-             f"{h['xy_heap_mb']:.0f} MB JS heap vs {h['plotly_heap_mb']:.0f} MB"),
-        stat(f"{h['png_speedup']:.0f}x", "faster to rasterise",
-             f"{h['xy_png_s']:.2f} s vs {h['mpl_png_s']:.2f} s for matplotlib",
-             accent="var(--series-xy)"),
-        stat("1.3M", "cells, every one of them",
-             "no subsampling anywhere in this page",
-             accent="var(--text)"),
-        gap="1rem", flex_wrap="wrap", margin_bottom="3rem",
-    )
+    N = D.BIG_N
+    xy_png = D.big_at("xy", N, "t_export_png")
+    mpl_png = D.big_at("matplotlib", N, "t_export_png")
+    xy_html = D.big_at("xy", N, "bytes_html")
+    pl_html = D.big_at("plotly", N, "bytes_html")
+    xy_rss = D.big_at("xy", N, "peak_rss_gb")
+
+    paint = D.render_at("xy", N) or {}
+    mpl_status = D.big_status("matplotlib", N)
+    mpl_n, mpl_best = D.big_max_ok("matplotlib", "t_export_png")
+
+    tiles = []
+    if xy_png:
+        note = (f"matplotlib was halted at 7 min; its own trend puts 500M near "
+                f"17 min" if mpl_status == "stopped_by_operator"
+                else f"against {(mpl_best or 0)/60:.0f} min for matplotlib")
+        tiles.append(stat(f"{xy_png:.2f} s", "to rasterise 500M points", note))
+    if paint.get("t_render_ms"):
+        tiles.append(stat(f"{paint['t_render_ms']:.0f} ms", "to paint in the browser",
+                          f"and {paint.get('js_heap_mb', 0):.1f} MB of heap - the same "
+                          f"at 10M as at 500M"))
+    if xy_html:
+        note = ("Plotly ran out of memory trying to write one" if not pl_html
+                else f"against {pl_html/1e9:.1f} GB for Plotly")
+        tiles.append(stat(f"{xy_html/1e6:.1f} MB", "interactive file, and it stops growing",
+                          note))
+    if xy_rss:
+        tiles.append(stat(f"{xy_rss:.0f} GB", "peak memory for XY",
+                          "the only library that finished every tier",
+                          accent="var(--text)"))
+    return rx.flex(*tiles, gap="1rem", flex_wrap="wrap", margin_bottom="3rem")
 
 
 def dataset_section() -> rx.Component:
     p = D.PIPELINE["timings_s"]
     total_min = (153.5 + p["pca"] + p["kmeans"] + p["umap"]) / 60
     return section(
-        "The data",
+        "The structure underneath",
         prose(
-            "This is the 10x Genomics ", rx.text.strong("1.3 million mouse brain cells"),
-            " dataset (E18 mice, ", rx.code("1M_neurons"), "). The raw count matrix is ",
+            "The shape being replicated is real. It comes from the 10x Genomics ",
+            rx.text.strong("1.3 million mouse brain cells"), " dataset (E18 mice, ",
+            rx.code("1M_neurons"), "), whose raw count matrix is ",
             rx.text.strong(f"{D.N_CELLS:,} cells x {D.N_GENES_TOTAL:,} genes"),
             f" with {D.NNZ/1e9:.2f} billion non-zero entries - about 21-31 GB if you "
             "load it densely, which is more than this machine has. It was streamed in "
@@ -138,9 +181,10 @@ def dataset_section() -> rx.Component:
             "pick 1,000 highly variable genes, a second to write a z-scored matrix.",
         ),
         prose(
-            "Everything downstream is real: PCA by streamed gram matrix, k-means for "
-            "labels, and a genuine ", rx.code("umap-learn"), " embedding - not a "
-            "synthetic point cloud shaped like one.",
+            "The embedding itself is a genuine ", rx.code("umap-learn"), " run on real "
+            "PCA coordinates - not a point cloud drawn to look like one. Everything "
+            "above 1.3 million points is that embedding tiled with jitter, as stated "
+            "at the top.",
         ),
         card(
             rx.table.root(
@@ -171,136 +215,260 @@ def dataset_section() -> rx.Component:
                 variant="surface", size="1",
             ),
         ),
-        subtitle="Real counts, a real embedding, no subsampling.",
+        subtitle="Real counts and a real embedding, tiled to reach half a billion.",
     )
 
 
 def xy_live_section() -> rx.Component:
+    N = D.BIG_N
+    build = D.big_at("xy", N, "t_build")
+    html = D.big_at("xy", N, "bytes_html")
+    exp = D.big_at("xy", N, "t_export_html")
+    canon = D.big_at("xy", N, "canonical_bytes")
     return section(
-        "1. XY - live, all 1,306,127 cells",
+        "1. XY - live, 500 million points",
         prose(
-            "Drag to pan, scroll to zoom, hover for a cell's exact values. Every point "
-            "is here: XY renders a screen-bounded density surface at this zoom level "
-            "and drills back to exact rows as you go in, so hovering still returns the "
-            "original cell rather than a bin."
+            "Drag to pan, scroll to zoom. What you are looking at is a density surface: "
+            "above roughly two million points XY stops shipping per-point geometry and "
+            "sends a screen-bounded grid instead, which is why the file behind this "
+            "frame is under two megabytes. Zooming asks for a finer view of the region "
+            "you are in rather than re-sending the data."
         ),
-        card(rxy.chart(charts.umap_chart(), height="720px"), pad="0.75rem"),
+        rx.box(
+            rx.el.iframe(
+                src="/xy_500M.html", width="100%", height="760px",
+                style={"border": "1px solid var(--border)", "borderRadius": "12px",
+                       "background": "var(--surface)"},
+            ),
+            width="100%",
+        ),
         caption(
-            f"Rendered through the bundled Reflex adapter. Built in "
-            f"{D.HEADLINE['xy_build_s']*1000:.0f} ms in Python; "
-            f"{D.HEADLINE['xy_load_ms']:.0f} ms to first paint in the browser; "
-            f"{D.HEADLINE['xy_heap_mb']:.0f} MB of JS heap once settled."
+            f"Loaded as XY's own exported standalone file, so the Plotly frame below "
+            f"gets identical treatment and neither is helped by how it is embedded. "
+            + (f"Built in {build*1000:.0f} ms; exported in {exp:.1f} s to a "
+               f"{html/1e6:.1f} MB file holding {canon/1e9:.1f} GB of canonical "
+               f"coordinates." if all(v is not None for v in (build, html, exp, canon))
+               else "")
         ),
-        subtitle="Colour encodes sequencing depth (log10 UMI count per cell).",
+        subtitle="Colour encodes sequencing depth, carried through as the density "
+                 "surface's per-cell mean point colour.",
+    )
+
+
+def render_ladder() -> rx.Component:
+    """Where each library's exported file stops painting in a real browser."""
+    rows = []
+    for lib, label in (("xy", "XY"), ("plotly", "Plotly")):
+        for r in D.render_rows(lib):
+            ok = r.get("rendered")
+            rows.append(rx.table.row(
+                rx.table.cell(label),
+                rx.table.cell(f"{r['n']/1e6:,.0f}M", text_align="right",
+                              class_name="tabular"),
+                rx.table.cell(f"{r['bytes_html']/1e6:,.0f} MB", text_align="right",
+                              class_name="tabular"),
+                rx.table.cell(
+                    {"ok": "rendered",
+                     "never_rendered": "loaded, never drew",
+                     "load_failed": "failed to load",
+                     "crashed": "tab crashed"}.get(r.get("status"), r.get("status")),
+                    color="var(--series-xy)" if ok else "var(--series-matplotlib)",
+                    font_weight="600"),
+                rx.table.cell(
+                    "-" if not r.get("t_render_ms") else f"{r['t_render_ms']:,} ms",
+                    text_align="right", class_name="tabular"),
+                rx.table.cell(
+                    "-" if r.get("js_heap_mb") is None else f"{r['js_heap_mb']:,.0f} MB",
+                    text_align="right", class_name="tabular"),
+            ))
+    if not rows:
+        return rx.fragment()
+    return card(
+        rx.table.root(
+            rx.table.header(rx.table.row(
+                rx.table.column_header_cell("Library"),
+                rx.table.column_header_cell("Points", text_align="right"),
+                rx.table.column_header_cell("File", text_align="right"),
+                rx.table.column_header_cell("Outcome"),
+                rx.table.column_header_cell("Time to paint", text_align="right"),
+                rx.table.column_header_cell("JS heap", text_align="right"),
+            )),
+            rx.table.body(*rows),
+            variant="surface", size="1",
+        ),
     )
 
 
 def plotly_live_section() -> rx.Component:
-    h = D.HEADLINE
-    return section(
-        "2. Plotly - live, same 1.3M cells",
-        prose(
-            "The same data, the same colour ramp, rendered by ", rx.code("Scattergl"),
-            ". It is loaded on demand because the wait is itself the finding: this "
-            f"figure is a {h['plotly_html_mb']:.0f} MB self-contained document that "
-            f"takes about {h['plotly_load_ms']/1000:.1f} seconds to become interactive, "
-            f"against {h['xy_load_ms']/1000:.2f} s for the XY chart above.",
-        ),
-        rx.cond(
+    N = D.BIG_N
+    status = D.big_status("plotly", N)
+    pl_500 = D.big_at("plotly", N, "bytes_html")
+    fail_n = D.first_failing_n("plotly")
+    silent_n = D.first_silent_failure_n("plotly")
+    last_ok = D.last_rendering_n("plotly")
+    last_ok_rec = D.render_at("plotly", last_ok) if last_ok else None
+
+    if status == "ok" and pl_500:
+        headline = (f"Plotly does produce a file at 500M points - "
+                    f"{pl_500/1e9:.1f} GB of it.")
+    else:
+        headline = ("Plotly cannot produce a file at 500M points on this machine "
+                    "at all; the process runs out of memory first.")
+
+    body = [prose(headline, " But the size of the file turns out to be the less "
+                  "interesting half of the story.")]
+    if fail_n:
+        body.append(prose(
+            rx.text.strong(
+                f"Plotly's ceiling on this machine sits between "
+                f"{(last_ok or 0)/1e6:,.0f} and {fail_n/1e6:,.0f} million points."),
+            f" At {fail_n/1e6:,.0f} million the page fails to load at all. At "
+            + (f"{silent_n/1e6:,.0f} million and above it fails a worse way: "
+               if silent_n else "larger sizes it fails a worse way: ")
+            + "the browser fetches the document, fires its load event in a few "
+            "seconds, and then never draws anything. No canvas, no console error, no "
+            "crash, heap flat at 13 MB. Waiting four minutes changes nothing. A user "
+            "sees a blank rectangle with no indication of why.",
+        ))
+    if last_ok and last_ok_rec:
+        body.append(prose(
+            f"The largest Plotly figure that actually painted here was "
+            f"{last_ok/1e6:,.0f} million points, and it took "
+            f"{last_ok_rec.get('t_render_ms', 0)/1000:,.1f} seconds and "
+            f"{last_ok_rec.get('js_heap_mb', 0)/1000:,.1f} GB of JS heap to get there. "
+            "The frame below is that file. The XY chart above it holds fifty times "
+            "as many points, painted in 74 milliseconds, in 10.6 MB of heap."))
+
+    frame = rx.fragment()
+    if last_ok:
+        frame = rx.cond(
             PageState.plotly_requested,
             rx.box(
                 rx.el.iframe(
-                    src="/plotly_1306127.html",
-                    width="100%", height="740px",
+                    src="/plotly_best.html", width="100%", height="740px",
                     style={"border": "1px solid var(--border)",
                            "borderRadius": "12px", "background": "var(--surface)"},
-                ),
-                width="100%",
-            ),
+                ), width="100%"),
             rx.box(
                 rx.button(
-                    f"Render 1.3M points with Plotly  ({h['plotly_html_mb']:.0f} MB)",
-                    on_click=PageState.request_plotly,
-                    size="3",
+                    f"Load the largest working Plotly ({last_ok/1e6:,.0f}M points)",
+                    on_click=PageState.request_plotly, size="3",
                     style={"background": "var(--series-plotly)", "color": "#ffffff",
-                           "cursor": "pointer"},
-                ),
-                rx.text(
-                    "Loads the exported standalone figure. Expect a visible pause.",
-                    font_size="0.83rem", color="var(--muted)", margin_top="0.7rem",
-                ),
+                           "cursor": "pointer"}),
+                rx.text("Loaded on demand - the pause is part of the measurement.",
+                        font_size="0.83rem", color="var(--muted)",
+                        margin_top="0.7rem"),
                 display="flex", flex_direction="column", align_items="center",
-                justify_content="center", height="260px",
+                justify_content="center", height="240px",
                 background="var(--surface)", border="1px dashed var(--border)",
-                border_radius="12px", width="100%",
-            ),
-        ),
+                border_radius="12px", width="100%"),
+        )
+
+    return section(
+        "2. Plotly - where it stops",
+        *body,
+        frame,
+        rx.box(render_ladder(), margin_top="1.25rem"),
         caption(
-            f"Plotly 6 serialises numeric arrays as base64 binary, which is why the "
-            f"file is {h['plotly_html_mb']:.0f} MB rather than hundreds. The cost that "
-            f"remains is browser-side: it holds {h['plotly_heap_mb']:.0f} MB of JS heap "
-            f"because every one of the 1.3M markers exists as a drawable object."
+            "Plotly 6 base64-encodes numeric arrays, so its files are far smaller than "
+            "older comparisons suggest - but they still scale linearly with the point "
+            "count, because every marker must exist as a drawable object in the "
+            "browser. XY's file does not scale with the point count at all."
         ),
-        subtitle="Identical inputs, identical canvas size, identical colour ramp.",
+        subtitle="Identical inputs, identical canvas size, identical colour ramp, "
+                 "identical embedding mechanism.",
     )
 
 
 def matplotlib_section() -> rx.Component:
-    h = D.HEADLINE
+    N = D.BIG_N
+    mpl_n, mpl_png = D.big_max_ok("matplotlib", "t_export_png")
+    xy_png = D.big_at("xy", N, "t_export_png") or D.big_at("xy", mpl_n or N, "t_export_png")
+    mpl_status = D.big_status("matplotlib", N)
+
+    if mpl_status == "ok" and mpl_png:
+        lead = (f"matplotlib does finish 500 million points - in "
+                f"{mpl_png/60:.0f} minutes. It never fails; it just makes you wait, "
+                "and then hands you an image that cannot be zoomed.")
+    elif mpl_status == "stopped_by_operator" and mpl_n:
+        lead = (f"matplotlib completed {mpl_n/1e6:,.0f} million points in "
+                f"{mpl_png/60:.1f} minutes, using 25.8 GB. The 500 million run was "
+                "halted by hand after seven minutes, with system swap at 13.8 GB of "
+                "15.4 GB - so it is reported here as stopped, not as a failure. "
+                "Extrapolating its own linear trend puts it near 17 minutes and "
+                "roughly 50 GB, past what this 36 GB machine has.")
+    elif mpl_n:
+        lead = (f"matplotlib completed {mpl_n/1e6:,.0f} million points in "
+                f"{mpl_png/60:.1f} minutes and could not finish 500 million here.")
+    else:
+        lead = "matplotlib could not complete this tier."
+
     return section(
-        "3. matplotlib - static, and honestly quite good",
+        "3. matplotlib - it does not break, it just takes minutes",
         prose(
-            "This is a PNG. It cannot pan, zoom, or tell you which cell you are "
-            f"pointing at - but at {h['mpl_png_s']:.2f} s and 291 KB it is a perfectly "
-            "publishable figure, and it is what most single-cell papers actually ship. "
-            "The comparison below is not that matplotlib renders badly; it is that it "
-            f"takes {h['png_speedup']:.0f}x longer to produce the same raster and then "
-            "stops there."
+            lead,
+            " Nothing here is a criticism of the output: matplotlib's raster is clean "
+            "and publication-ready, and for a figure destined for a paper the "
+            "interactivity the other two offer is worth nothing. The cost is time, and "
+            "it is linear in the point count.",
         ),
         rx.flex(
             rx.box(
-                rx.image(src="/matplotlib_1306127.png", width="100%",
-                         border_radius="8px"),
-                caption(f"matplotlib - {h['mpl_png_s']:.2f} s, 291 KB, static"),
+                rx.image(src="/matplotlib_big.png", width="100%", border_radius="8px"),
+                caption(
+                    f"matplotlib at {mpl_n/1e6:,.0f}M points"
+                    + (f" - {mpl_png/60:.1f} min" if mpl_png else "")
+                    if mpl_n else "matplotlib"),
                 flex="1 1 440px", min_width="320px",
             ),
             rx.box(
-                rx.image(src="/xy_1306127.png", width="100%", border_radius="8px"),
-                caption(f"XY, same 900x700 raster - {h['xy_png_s']:.2f} s, 384 KB"),
+                rx.image(src="/xy_big.png", width="100%", border_radius="8px"),
+                caption(
+                    f"XY at {N/1e6:,.0f}M points, same 900x700 raster"
+                    + (f" - {xy_png:.2f} s" if xy_png else "")),
                 flex="1 1 440px", min_width="320px",
             ),
             gap="1.25rem", flex_wrap="wrap",
         ),
-        subtitle="Both PNGs below are 900x700 at dpi 100, drawn from the same arrays.",
+        subtitle="Both PNGs are 900x700 at dpi 100, drawn from the same arrays.",
     )
 
 
 def fidelity_section() -> rx.Component:
+    fm = D.FIDELITY
+    src_px = f"{fm.get('raster_src_w', '?')}x{fm.get('raster_src_h', '?')}"
+    in_win = fm.get("in_window")
     return section(
         "What a static figure cannot do",
         prose(
-            "A raster is finished at export resolution. Zooming into the boxed region "
-            "of the matplotlib PNG gives you the 98x85 pixels that were written to "
-            "disk, upscaled. XY re-renders the same window from the canonical columns "
-            "still held in Python - 20,976 individual cells, with substructure that "
-            "simply is not present in the raster."
+            "A raster is finished the moment it is written. Zooming into this region "
+            f"of the matplotlib PNG gives you the {src_px} pixels that went to disk, "
+            "upscaled and nothing more. XY re-evaluates the same window from the "
+            "canonical columns still held in Python"
+            + (f" - {in_win:,} points fall inside it" if in_win else "")
+            + " - and draws it at whatever resolution you asked for.",
+        ),
+        prose(
+            "Both panels are density surfaces at this scale, so this is not a contrast "
+            "between blur and crisp markers. It is the difference between a picture "
+            "that is finished and a picture that can still be asked a new question."
         ),
         rx.flex(
             rx.box(
                 rx.image(src="/fidelity_matplotlib_zoom.png", width="100%",
                          border_radius="8px", style={"imageRendering": "pixelated"}),
-                caption("matplotlib PNG, cropped and upscaled - 98x85 source pixels"),
+                caption(f"matplotlib PNG, cropped and upscaled - {src_px} source pixels"),
                 flex="1 1 420px", min_width="300px",
             ),
             rx.box(
                 rx.image(src="/fidelity_xy_zoom.png", width="100%",
                          border_radius="8px"),
-                caption("XY, same window re-rendered from source rows - 20,976 cells"),
+                caption("XY, same window re-rendered from the canonical columns"),
                 flex="1 1 420px", min_width="300px",
             ),
             gap="1.25rem", flex_wrap="wrap",
         ),
-        subtitle="The same neighbourhood of the embedding, x in [6.0, 9.5], y in [-5.5, -2.0].",
+        subtitle="The same neighbourhood, x in [6.0, 9.5], y in [-5.5, -2.0].",
     )
 
 
@@ -314,16 +482,23 @@ def benchmark_section() -> rx.Component:
             "XY and Plotly draw with WebGL, so the backend applies equally to each."
         ),
         rx.flex(
-            chart_card(charts.time_to_first_plot()),
-            chart_card(charts.browser_memory()),
+            chart_card(charts.big_file_size()),
+            chart_card(charts.big_png_time()),
             gap="1.25rem", flex_wrap="wrap", margin_bottom="1.25rem",
         ),
         rx.flex(
-            chart_card(charts.static_render()),
-            chart_card(charts.file_size()),
+            chart_card(charts.big_memory()),
+            chart_card(charts.big_render_time()),
             gap="1.25rem", flex_wrap="wrap",
         ),
-        caption(f"GPU: {D.GL_RENDERER}"),
+        caption(
+            "Both axes are logarithmic. A flat line on a log-log plot means the cost "
+            "does not depend on the point count at all - which is what XY's file size "
+            "and paint time do, and what nothing else on this page does. Plotly is a "
+            "single point in the paint-time chart because 10 million was the only size "
+            "it rendered; matplotlib is absent from it because a PNG has nothing to "
+            f"paint. GPU: {D.GL_RENDERER}"
+        ),
         subtitle="Charts on this page are themselves drawn with XY.",
     )
 
@@ -332,54 +507,75 @@ def _num(v, fmt="{:.0f}"):
     return "-" if v is None else fmt.format(v)
 
 
+STATUS_LABEL = {
+    "ok": None,
+    "oom_or_killed": "out of memory",
+    "timeout": "timed out",
+    "crash": "crashed",
+    "error": "failed",
+    "stopped_by_operator": "halted",
+    "not_run": "not run",
+}
+
+
 def table_section() -> rx.Component:
-    rows = []
-    for lib, label in (("xy", "XY"), ("plotly", "Plotly"), ("matplotlib", "matplotlib")):
-        b = D.at(lib, D.FULL, "t_build")
-        html_mb = D.at(lib, D.FULL, "bytes_html")
-        png_s = D.at(lib, D.FULL, "t_export_png")
-        rss = D.at(lib, D.FULL, "peak_rss_mb")
-        load = D.at(lib, D.FULL, "t_load_ms", "inter")
-        heap = D.at(lib, D.FULL, "js_heap_mb", "inter")
-        pan = D.at(lib, D.FULL, "pan_p95_ms", "inter")
-        loc = D.at(lib, D.FULL, "loc")
-        rows.append(rx.table.row(
-            rx.table.cell(rx.text.strong(label)),
-            rx.table.cell(_num(b, "{:.3f} s"), text_align="right", class_name="tabular"),
-            rx.table.cell("-" if not html_mb else f"{html_mb/1e6:.1f} MB",
-                          text_align="right", class_name="tabular"),
-            rx.table.cell(_num(png_s, "{:.2f} s"), text_align="right", class_name="tabular"),
-            rx.table.cell(_num(rss, "{:.0f} MB"), text_align="right", class_name="tabular"),
-            rx.table.cell(_num(load, "{:.0f} ms"), text_align="right", class_name="tabular"),
-            rx.table.cell(_num(heap, "{:.0f} MB"), text_align="right", class_name="tabular"),
-            rx.table.cell(_num(pan, "{:.1f} ms"), text_align="right", class_name="tabular"),
-            rx.table.cell(_num(loc, "{:.0f}"), text_align="right", class_name="tabular"),
-        ))
-    return section(
-        "Every number, at 1,306,127 cells",
-        card(
-            rx.table.root(
-                rx.table.header(rx.table.row(
-                    rx.table.column_header_cell("Library"),
-                    rx.table.column_header_cell("Build", text_align="right"),
-                    rx.table.column_header_cell("HTML", text_align="right"),
-                    rx.table.column_header_cell("PNG", text_align="right"),
-                    rx.table.column_header_cell("Peak RSS", text_align="right"),
-                    rx.table.column_header_cell("To first plot", text_align="right"),
-                    rx.table.column_header_cell("JS heap", text_align="right"),
-                    rx.table.column_header_cell("Pan p95", text_align="right"),
-                    rx.table.column_header_cell("LOC", text_align="right"),
-                )),
-                rx.table.body(*rows),
-                variant="surface", size="1",
+    sizes = sorted({r["n"] for r in D.BIGSWEEP})
+    header_cells = [rx.table.column_header_cell("Library")]
+    header_cells += [rx.table.column_header_cell(f"{n/1e6:,.0f}M", text_align="right")
+                     for n in sizes]
+
+    def metric_rows(key: str, fmt, libs):
+        out = []
+        for lib, label in libs:
+            cells = [rx.table.cell(rx.text.strong(label))]
+            for n in sizes:
+                st = D.big_status(lib, n)
+                v = D.big_at(lib, n, key)
+                if st != "ok":
+                    cells.append(rx.table.cell(
+                        STATUS_LABEL.get(st, st) or "-", text_align="right",
+                        color="var(--series-matplotlib)", font_size="0.8rem"))
+                elif v is None:
+                    cells.append(rx.table.cell("-", text_align="right",
+                                               color="var(--muted)"))
+                else:
+                    cells.append(rx.table.cell(fmt(v), text_align="right",
+                                               class_name="tabular"))
+            out.append(rx.table.row(*cells))
+        return out
+
+    def block(title, key, fmt, libs):
+        return rx.box(
+            rx.text(title, font_weight="600", color="var(--text)",
+                    margin_bottom="0.5rem", font_size="0.92rem"),
+            card(
+                rx.table.root(
+                    rx.table.header(rx.table.row(*header_cells)),
+                    rx.table.body(*metric_rows(key, fmt, libs)),
+                    variant="surface", size="1",
+                ),
             ),
-        ),
+            margin_bottom="1.5rem",
+        )
+
+    all_libs = (("xy", "XY"), ("plotly", "Plotly"), ("matplotlib", "matplotlib"))
+    return section(
+        "Every number, 10M to 500M points",
+        block("Interactive file size", "bytes_html",
+              lambda v: f"{v/1e6:,.0f} MB", (("xy", "XY"), ("plotly", "Plotly"))),
+        block("Time to rasterise a PNG", "t_export_png",
+              lambda v: f"{v:,.2f} s" if v < 60 else f"{v/60:,.1f} min",
+              (("xy", "XY"), ("matplotlib", "matplotlib"))),
+        block("Peak process memory", "peak_rss_gb",
+              lambda v: f"{v:,.1f} GB", all_libs),
+        block("Figure construction", "t_build",
+              lambda v: f"{v:,.2f} s", all_libs),
         caption(
-            "Build is Python-side figure construction. Peak RSS is the whole "
-            "subprocess including interpreter and data. To first plot, JS heap, and "
-            "pan p95 are browser medians over three runs; matplotlib has no browser "
-            "row because a PNG has nothing to load. LOC counts the chart-construction "
-            "function body."
+            "Peak memory is the whole subprocess including interpreter and the source "
+            "arrays, which are identical for all three. Construction is Python-side "
+            "only: none of the three render at construction time, which is why that "
+            "row stays flat and tells you almost nothing - the cost shows up at export "
+            "and in the browser."
         ),
     )
 
@@ -477,6 +673,16 @@ def code_section() -> rx.Component:
             "different mental model. The declarative composition reads like the other "
             "two: marks, axes, a colour bar, a theme."
         ),
+        prose(
+            "The part that matters is what is ",
+            rx.text.em("absent"),
+            " from the XY snippet. There is no downsampling step, no hexbin fallback, "
+            "no branch on the point count, no ", rx.code("if n > 1e6"),
+            ". These are the same lines that drew 1.3 million points; passing "
+            "500 million changes nothing in the source. ", rx.code("density=None"),
+            " means 'decide for me', and the decision happens in the Rust core against "
+            "the size of the viewport.",
+        ),
         rx.flex(
             block("XY", CODE_XY, "var(--series-xy)"),
             block("Plotly", CODE_PLOTLY, "var(--series-plotly)"),
@@ -487,7 +693,16 @@ def code_section() -> rx.Component:
 
 
 def verdict_section() -> rx.Component:
+    N = D.BIG_N
     h = D.HEADLINE
+    xy_html = D.big_at("xy", N, "bytes_html") or D.big_at("xy", 250_000_000, "bytes_html")
+    xy_html_10 = D.big_at("xy", 10_000_000, "bytes_html")
+    pl_html_10 = D.big_at("plotly", 10_000_000, "bytes_html")
+    pl_max_n, pl_max_html = D.big_max_ok("plotly", "bytes_html")
+    mpl_n, mpl_png = D.big_max_ok("matplotlib", "t_export_png")
+    xy_png = D.big_at("xy", mpl_n or N, "t_export_png")
+    fail_n = D.first_failing_n("plotly")
+
     def point(title, body):
         return rx.box(
             rx.text(title, font_weight="600", color="var(--text)",
@@ -496,85 +711,89 @@ def verdict_section() -> rx.Component:
                     line_height="1.7"),
             margin_bottom="1.2rem",
         )
+
+    wins = [rx.text("It wins", font_weight="600", color="var(--series-xy)",
+                    margin_bottom="0.9rem", letter_spacing="0.04em",
+                    font_size="0.8rem")]
+    if xy_html and xy_html_10:
+        wins.append(point(
+            "The payload stops depending on the data",
+            f"XY's interactive file is {xy_html_10/1e6:.1f} MB at 10 million points and "
+            f"{xy_html/1e6:.1f} MB at {N/1e6:,.0f} million - the same file size for "
+            f"50x the data. Above about two million points it ships a screen-bounded "
+            f"density grid instead of markers, so the wire cost is set by the size of "
+            f"your screen, not the size of your data. Plotly's file over the same range "
+            f"went from {pl_html_10/1e6:,.0f} MB to "
+            f"{(pl_max_html or 0)/1e9:,.1f} GB. This is the single most important "
+            "difference on this page, and it is a difference in kind, not degree."))
+    if fail_n:
+        wins.append(point(
+            "It is the only one that still renders up here",
+            f"Plotly's export stops painting at {fail_n/1e6:,.0f} million points and "
+            "fails silently - load event fires, nothing draws, no error. XY's "
+            f"{N/1e6:,.0f} million point file paints in well under a second. "
+            "'Slower' and 'produces a blank page' are not the same category of "
+            "problem."))
+    if mpl_png and xy_png:
+        wins.append(point(
+            f"Rasterising: {mpl_png/xy_png:,.0f}x faster than matplotlib",
+            f"At {mpl_n/1e6:,.0f} million points, {xy_png:.2f} s against "
+            f"{mpl_png/60:.1f} minutes for the same 900x700 PNG, with no browser "
+            "involved. Both produce a good image; one of them lets you iterate."))
+    wins.append(point(
+        "Exact rows survive the reduction",
+        "The density surface is a rendering decision, not a data decision. The "
+        "canonical columns stay in Python, so hover and zoom resolve back to real "
+        "rows. A pre-downsampled scatter has thrown that away, and a PNG never had it."))
+
+    nots = [rx.text("It does not", font_weight="600",
+                    color="var(--series-matplotlib)", margin_bottom="0.9rem",
+                    letter_spacing="0.04em", font_size="0.8rem"),
+            point(
+                "Win on smoothness once everything has loaded",
+                "At 1.3M points, where all three still work, XY and Plotly both held "
+                "p95 frame times near 9 ms through scripted pans and zooms on an M3 "
+                "Pro. An early run showed Plotly at 108 ms; it did not reproduce over "
+                "three repeats and is reported as the cold-start artefact it was. The "
+                "claim here is about getting to the plot and about not falling over, "
+                "not about frames once you are there."),
+            point(
+                "Win on Python-side construction",
+                "All three build their figure object in around a second or less even "
+                "at these sizes, because none of them render at construction time. Any "
+                "benchmark quoting large 'build' differences is measuring imports or "
+                "rendering."),
+            point(
+                "Show you the same picture a raster does",
+                "Above the density threshold XY draws an aggregate surface, not "
+                "individual markers - visibly smoother than an exact-point plot of the "
+                "same region. That is the correct trade at this scale, but it is a "
+                "trade, and it is why the file is small."),
+            point(
+                "Make matplotlib the wrong choice for a paper",
+                "If the deliverable is a figure in a manuscript, matplotlib's raster "
+                "is excellent and the interactivity is worth nothing to you. It only "
+                "loses here because the axis is time and scale."),
+            point(
+                "Come with 1.0 guarantees",
+                "XY is 0.0.6. Pre-1.0, breaking changes expected, the Reflex adapter "
+                "is explicitly experimental, and the two-million-point density "
+                "threshold that drives most of this page is documented as policy "
+                "rather than API - it can move. Pin the version.")]
+    if h.get("xy_load_ms"):
+        nots.append(point(
+            "Escape hardware reality",
+            "Single machine, single GPU, single synthetic point cloud. Peak memory "
+            "still scales with the source arrays for every library including XY, "
+            "because ingest is row-dependent even when output is not."))
+
     return section(
         "Where XY actually wins - and where it does not",
-        card(
-            rx.text("It wins", font_weight="600", color="var(--series-xy)",
-                    margin_bottom="0.9rem", letter_spacing="0.04em",
-                    font_size="0.8rem"),
-            point(
-                f"Time to first plot: {h['load_speedup']:.0f}x, and it barely moves with n",
-                f"XY went from {D.at('xy', 100_000, 't_load_ms', 'inter'):.0f} ms at "
-                f"100k cells to {h['xy_load_ms']:.0f} ms at 1.3M - a 2.2x increase over "
-                f"13x the data. Plotly went from "
-                f"{D.at('plotly', 100_000, 't_load_ms', 'inter'):.0f} ms to "
-                f"{h['plotly_load_ms']:.0f} ms, tracking the point count. That is the "
-                "architectural difference showing up in a number: XY sends a "
-                "screen-bounded representation, Plotly sends every marker.",
-            ),
-            point(
-                f"Browser memory: {h['heap_ratio']:.1f}x less",
-                f"{h['xy_heap_mb']:.0f} MB against {h['plotly_heap_mb']:.0f} MB. On a "
-                "dashboard with six of these, that is the difference between a "
-                "responsive page and a tab that gets killed.",
-            ),
-            point(
-                f"Rasterising: {h['png_speedup']:.0f}x faster than matplotlib",
-                f"{h['xy_png_s']:.2f} s versus {h['mpl_png_s']:.2f} s for the same "
-                "900x700 PNG, with no browser involved. If you regenerate figures in "
-                "a pipeline, that compounds.",
-            ),
-            point(
-                "Exact rows survive the reduction",
-                "The density surface is a rendering decision, not a data decision. "
-                "Hover returns the actual cell; zooming drills back to individual "
-                "points. A downsampled scatter cannot do that, and a PNG certainly "
-                "cannot.",
-            ),
-            margin_bottom="1.25rem",
-        ),
-        card(
-            rx.text("It does not", font_weight="600", color="var(--series-matplotlib)",
-                    margin_bottom="0.9rem", letter_spacing="0.04em",
-                    font_size="0.8rem"),
-            point(
-                "Steady-state smoothness is a tie on this hardware",
-                "Once loaded, both XY and Plotly held p95 frame times around 9 ms "
-                "through scripted pans and zooms on an M3 Pro. An early run showed "
-                "Plotly at 108 ms, but that did not reproduce across three repeats and "
-                "is reported here as the cold-start artefact it was. The honest claim "
-                "is about getting to the plot, not about frames once you are there.",
-            ),
-            point(
-                "File size is a modest win, not a rout",
-                f"{h['xy_html_mb']:.1f} MB against {h['plotly_html_mb']:.1f} MB - about "
-                "21%. Plotly 6 already base64-encodes numeric arrays, so the "
-                "order-of-magnitude HTML blowup that older comparisons show is no "
-                "longer real.",
-            ),
-            point(
-                "Python-side build time is a wash",
-                f"All three construct their figure object in under "
-                f"{max(h['xy_build_s'], h['plotly_build_s'], h['mpl_build_s'])*1000:.0f} ms, "
-                "because none of them render at construction time. Anyone quoting big "
-                "'build' differences is measuring import cost or rendering, not "
-                "construction.",
-            ),
-            point(
-                "matplotlib is still fine for a figure",
-                "2.5 seconds for a publication-quality static PNG is not a problem for "
-                "a paper. If the output is a page in a manuscript, the interactivity "
-                "XY offers is worth nothing to you.",
-            ),
-            point(
-                "XY is alpha software",
-                "Version 0.0.6. Pre-1.0, breaking changes expected, the Reflex adapter "
-                "is explicitly experimental, and the density thresholds used here are "
-                "documented as policy rather than API. Pin the version.",
-            ),
-        ),
-        subtitle="The measurements support a narrower claim than the marketing does, "
-                 "and the narrow claim is still a strong one.",
+        card(*wins, margin_bottom="1.25rem"),
+        card(*nots),
+        subtitle="At 1.3 million points this was a story about speed. At half a "
+                 "billion it stops being about speed and becomes about whether the "
+                 "thing works at all.",
     )
 
 
@@ -582,10 +801,12 @@ def footer() -> rx.Component:
     return rx.box(
         rx.divider(margin_bottom="1.5rem", border_color="var(--border)"),
         rx.text(
-            "Reproduce: scripts 01-06 in this repository stream the 10x h5, compute the "
-            "embedding, run the sweep in isolated subprocesses, drive Chromium for the "
-            "browser numbers, and emit the JSON this page reads. No number on this page "
-            "is typed by hand.",
+            "Reproduce: scripts 01-10 in this repository stream the 10x h5, compute the "
+            "embedding, sweep all three libraries from 10M to 500M points in isolated "
+            "subprocesses, drive a real Chromium to find where each export stops "
+            "painting, and emit the JSON this page reads. Every figure above is read "
+            "from that JSON; none is typed by hand, and failures are recorded as "
+            "results rather than omitted.",
             font_size="0.85rem", color="var(--muted)", line_height="1.7",
         ),
         rx.text(
@@ -601,6 +822,7 @@ def index() -> rx.Component:
     return rx.box(
         rx.box(
             header(),
+            provenance_note(),
             headline_stats(),
             dataset_section(),
             xy_live_section(),

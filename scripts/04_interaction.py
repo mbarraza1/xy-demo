@@ -156,17 +156,19 @@ def main() -> None:
     ap.add_argument("--files", nargs="*", default=None)
     ap.add_argument("--nav-timeout", type=int, default=180_000)
     ap.add_argument("--out", default=OUT)
+    ap.add_argument("--dir", default=ARTIFACT_DIR)
     args = ap.parse_args()
     out_path = args.out
 
     from playwright.sync_api import sync_playwright
 
+    art_dir = args.dir
     files = args.files or sorted(
-        f for f in os.listdir(ARTIFACT_DIR) if f.endswith(".html"))
+        f for f in os.listdir(art_dir) if f.endswith(".html"))
     if not files:
-        raise SystemExit(f"no .html artifacts in {ARTIFACT_DIR}")
+        raise SystemExit(f"no .html artifacts in {art_dir}")
 
-    httpd = serve(ARTIFACT_DIR, PORT)
+    httpd = serve(art_dir, PORT)
     results = []
     try:
         with sync_playwright() as pw:

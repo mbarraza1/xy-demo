@@ -1,31 +1,60 @@
-# Plotting 1.3 million cells three ways
+# Plotting 500 million points three ways
 
 A benchmark of [XY](https://github.com/reflex-dev/xy) against matplotlib and Plotly,
-using a real single-cell RNA-seq UMAP of the 10x Genomics **1.3 million mouse brain
-cells** dataset (E18 mice). Ends in a Reflex page that shows all three renderings
-live and reports every measurement.
+scaling a real single-cell RNA-seq UMAP up to half a billion points. Ends in a Reflex
+page that shows the surviving renderings live and reports every measurement.
 
 No number on the page is typed by hand — the page reads `results/report_data.json`,
-which the scripts produce.
+which the scripts produce. Failures are recorded as results, not omitted.
 
-## Headline results, at 1,306,127 cells
+## What the points are
 
-| | XY | Plotly | matplotlib |
-|---|---|---|---|
-| Figure build (Python) | 0.017 s | 0.038 s | 0.051 s |
-| Self-contained HTML | 21.3 MB | 26.9 MB | — |
-| PNG rasterise | **0.05 s** | — | 2.52 s |
-| Time to first plot (browser) | **157 ms** | 2,222 ms | — |
-| JS heap once settled | **68 MB** | 588 MB | — |
-| Pan p95 frame time | 9.0 ms | 9.1 ms | — |
+There are only **1,306,127 cells** in the 10x Genomics 1.3M mouse brain dataset, so a
+500-million-point plot cannot be a UMAP of cells. The large point clouds are that real
+embedding **replicated with Gaussian jitter (σ = 0.06)**. The structure is real; the
+individual points are manufactured. Every library receives the identical array, so the
+rendering comparison is unaffected — but no biological claim should be read off the
+hero figure.
 
-XY is **14× faster to first plot**, holds **8.6× less browser memory**, and
-rasterises **51× faster** than matplotlib. Steady-state pan/zoom smoothness is a
-**tie** with Plotly on this hardware — see "Honest caveats" below.
+The embedding underneath is genuine: a real `umap-learn` run on real PCA coordinates
+from the real count matrix (2.62 billion non-zeros, streamed in cell-major chunks).
+
+## Headline results
+
+**Browser** — does the exported file actually paint?
+
+| points | 10M | 25M | 50M | 100M | 500M |
+|---|---|---|---|---|---|
+| XY paint time | 114 ms | 74 ms | 60 ms | 61 ms | **74 ms** |
+| XY JS heap | 10.6 MB | 10.6 MB | 10.6 MB | 10.6 MB | **10.6 MB** |
+| Plotly | 15,594 ms / 3.1 GB | failed to load | loaded, never drew | loaded, never drew | OOM |
+
+XY's paint time and heap are **flat** from 10M to 500M. Plotly's ceiling on this
+machine is between 10M and 25M, and above it the failure is *silent*: the load event
+fires, then nothing is ever drawn — no canvas, no console error, no crash.
+
+**Export**
+
+| points | 10M | 25M | 50M | 100M | 250M | 500M |
+|---|---|---|---|---|---|---|
+| XY file | 2 MB | 2 MB | 2 MB | 2 MB | 2 MB | **2 MB** |
+| Plotly file | 173 MB | 426 MB | 847 MB | 1,689 MB | 4,216 MB | out of memory |
+| XY PNG | 0.04 s | 0.06 s | 0.10 s | 0.22 s | 1.00 s | **1.96 s** |
+| matplotlib PNG | 20.0 s | 50.1 s | 101.0 s | 218.4 s | 516.8 s | halted |
+| XY peak RSS | 0.5 GB | 1.1 GB | 2.0 GB | 3.9 GB | 9.4 GB | 18.7 GB |
+
+Above roughly 2 million points XY stops shipping per-point geometry and sends a
+screen-bounded density surface, so its payload is set by the size of the viewport
+rather than the size of the data. That is why the file size row is constant.
+
+**The matplotlib 500M run was halted by hand**, not observed to fail: it was stopped
+after 7 minutes at 7.4 GB RSS with system swap at 13.8 GB of 15.4 GB. Extrapolating
+its own linear trend from 250M puts it near 17 minutes and ~50 GB, past what this
+36 GB machine has. It is reported as `stopped_by_operator`.
 
 ## Pipeline
 
-Raw counts to embedding in **11.9 minutes** on an M3 Pro:
+Raw counts to embedding in **11.9 minutes**:
 
 | Stage | Time |
 |---|---|
@@ -33,10 +62,6 @@ Raw counts to embedding in **11.9 minutes** on an M3 Pro:
 | PCA to 50 components (streamed gram matrix) | 9.3 s |
 | MiniBatchKMeans, 24 clusters | 5.2 s |
 | UMAP, 15 neighbours, 200 epochs | 528.7 s |
-
-The raw matrix is 1,306,127 cells × 27,998 genes with **2.62 billion non-zeros** —
-roughly 21–31 GB dense, more than this machine has. `01_preprocess.py` streams it in
-cell-major chunks and never holds more than one chunk at a time.
 
 ## Reproducing
 
@@ -52,57 +77,67 @@ curl -L -o data/1M_neurons_filtered_gene_bc_matrices_h5.h5 \
 
 .venv/bin/python scripts/01_preprocess.py     # ~2.5 min
 .venv/bin/python scripts/02_pca_umap.py       # ~9 min
-.venv/bin/python scripts/03_benchmark.py      # sweep, isolated subprocesses
+.venv/bin/python scripts/03_benchmark.py      # 10k-1.3M sweep
 for r in 1 2 3; do
   .venv/bin/python scripts/04_interaction.py --out results/interaction_run$r.json
 done
-.venv/bin/python scripts/05_aggregate.py      # medians -> report_data.json
-.venv/bin/python scripts/06_fidelity.py       # zoom comparison figures
+.venv/bin/python scripts/09_bigsweep.py       # 10M-500M sweep, ~45 min, resumable
+.venv/bin/python scripts/10_biginteraction.py # where each export stops painting
+.venv/bin/python scripts/05_aggregate.py      # -> report_data.json
+.venv/bin/python scripts/06_fidelity.py --source synthetic --n 100000000 \
+    --raster app/assets/matplotlib_big.png
+.venv/bin/python scripts/11_assets.py         # stage what the page serves
 
 cd app && ../.venv/bin/reflex run             # http://localhost:3000
 ```
 
+**Memory warning.** `09_bigsweep.py` pushes matplotlib and Plotly until they fail. On a
+36 GB machine the 250M matplotlib case peaks at 25.8 GB and the 500M case will exhaust
+swap. It is resumable — completed cases are cached in `results/bigsweep.json` — so it
+is safe to stop it and restart. Reduce `SIZES` in that script if you have less RAM.
+
 ## How the comparison is kept fair
 
-- Identical inputs: same UMAP coordinates, same continuous colour values, same
-  validated blue ramp, same 900×700 canvas, same marker size and opacity.
-- Every benchmark case runs in a **fresh subprocess**, so peak RSS and import cost
-  are isolated and no warm cache flatters the next library.
-- `scale=1` is forced on XY's PNG export; it defaults to a 2× device-pixel-ratio,
-  which would have quadrupled the pixel count and made the byte comparison
-  meaningless.
-- Both interactive exports are self-contained (`include_plotlyjs=True` for Plotly).
-- Browser numbers are **medians of three runs** driving real headless Chromium on
-  the GPU (ANGLE Metal, Apple M3 Pro). Both libraries draw with WebGL, so the
-  backend applies equally.
+- Identical inputs: the same arrays, the same validated blue ramp, the same 900×700
+  canvas, the same marker size and opacity.
+- Every case runs in a **fresh subprocess**, so peak RSS and import cost are isolated.
+- Both interactive exports are embedded the same way — each library's own standalone
+  HTML file in an iframe — so neither is helped by the embedding mechanism.
+- `scale=1` is forced on XY's PNG export; it defaults to a 2× device-pixel-ratio, which
+  would have quadrupled the pixel count against matplotlib's.
+- Browser results come from real headless Chromium on the GPU (ANGLE Metal, M3 Pro).
+  Both libraries draw with WebGL, so the backend applies equally.
 
 ## Honest caveats
 
-- **Steady-state interaction is a tie.** Once loaded, both XY and Plotly held ~9 ms
-  p95 frame times. An early run showed Plotly at 108 ms; it did not reproduce across
-  three repeats and is reported as the cold-start artefact it was. XY's advantage is
-  in *getting to* the plot, not in frames after you are there.
-- **File size is a modest win** (21%), not the order of magnitude older comparisons
-  show. Plotly 6 already base64-encodes numeric arrays.
-- **Python-side build time is a wash** — none of the three render at construction
-  time, so all are sub-100 ms.
-- **matplotlib is still fine for a static figure.** 2.5 s for a publication-quality
-  PNG is a non-problem if the output is a page in a manuscript.
-- **XY is alpha** (0.0.6). Pre-1.0, breaking changes expected, the Reflex adapter is
-  explicitly experimental, and the density thresholds are documented as policy
-  rather than API. Pin the version.
-- Single machine, single GPU, single dataset. These numbers are not a general law.
+- **The 500M point cloud is synthetic.** See "What the points are" above.
+- **Steady-state smoothness is a tie** where both libraries work. At 1.3M points both
+  held ~9 ms p95 frame times through scripted pans and zooms. XY's advantage is in
+  getting to the plot and in not falling over, not in frames once you are there.
+- **Python-side construction is a wash** — none of the three render at construction
+  time, so all are sub-second even at 500M.
+- **XY's density surface is an aggregate**, visibly smoother than an exact-point plot.
+  That is the correct trade at this scale, but it is a trade.
+- **matplotlib is still right for a paper figure.** It only loses here because the axis
+  is time and scale.
+- **XY is alpha** (0.0.6). Pre-1.0, the Reflex adapter is experimental, and the ~2M
+  density threshold driving most of this is documented as policy, not API. Pin it.
+- Single machine, single GPU. These numbers are not a general law.
 
 ## Layout
 
 ```
-scripts/01_preprocess.py    stream 2.62B nnz -> 1.3M x 1000 z-scored matrix
-scripts/02_pca_umap.py      PCA -> k-means -> UMAP
-scripts/bench_one.py        one (library, n) case; the three chart implementations
-scripts/03_benchmark.py     sweep orchestrator
-scripts/04_interaction.py   Chromium: load time, frame times, JS heap
-scripts/05_aggregate.py     medians -> results/report_data.json
-scripts/06_fidelity.py      zoom-fidelity figures
-scripts/07_screenshot.py    screenshot the running page
-app/                        Reflex comparison page
+scripts/01_preprocess.py     stream 2.62B nnz -> 1.3M x 1000 z-scored matrix
+scripts/02_pca_umap.py       PCA -> k-means -> UMAP
+scripts/bench_one.py         one (library, n) case at 10k-1.3M
+scripts/03_benchmark.py      small-scale sweep orchestrator
+scripts/04_interaction.py    Chromium: load time, frame times, JS heap
+scripts/bench_big.py         one (library, n) case at 10M-500M
+scripts/09_bigsweep.py       big sweep orchestrator (resumable)
+scripts/10_biginteraction.py where each export stops painting
+scripts/05_aggregate.py      medians + merge -> results/report_data.json
+scripts/06_fidelity.py       zoom-fidelity figures
+scripts/11_assets.py         stage the artifacts the page serves
+scripts/07_screenshot.py     screenshot the running page
+app/                         Reflex comparison page
 ```

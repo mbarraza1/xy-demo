@@ -43,7 +43,19 @@ def main() -> None:
     bench = json.load(open("results/benchmark.json"))
     pipeline = json.load(open("results/pipeline_timings.json"))
 
-    report = {"benchmark": bench, "interaction": interaction, "pipeline": pipeline}
+    # The 10M-500M sweep and its browser measurements are optional: they only
+    # exist once 09_bigsweep.py / 10_biginteraction.py have been run.
+    def optional(path, default):
+        try:
+            return json.load(open(path))
+        except (FileNotFoundError, json.JSONDecodeError):
+            return default
+
+    bigsweep = optional("results/bigsweep.json", [])
+    biginteraction = optional("results/biginteraction.json", [])
+
+    report = {"benchmark": bench, "interaction": interaction, "pipeline": pipeline,
+              "bigsweep": bigsweep, "biginteraction": biginteraction}
     with open(OUT, "w") as fh:
         json.dump(report, fh, indent=2)
 

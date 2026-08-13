@@ -10,18 +10,23 @@ app/assets/external/
 # Compiled reflex_xy binary chart payloads — regenerated from data/ on `reflex run`
 app/assets/xy/
 
-# Large page assets copied in for the demo — regenerate with scripts/03 and 06
-app/assets/plotly_1306127.html
+# Page assets staged by scripts/11_assets.py from results/ — some are hundreds of MB.
+# report_data.json is the exception: it is small and is what the page reads.
+app/assets/*.html
 app/assets/*.png
 
-# Benchmark artifacts (regenerate with scripts/03)
+# Benchmark artifacts (regenerate with scripts/03, 09, 10)
 results/artifacts/
+results/big/
 results/smoke/
 results/*.log
 
-# Scratch verification screenshots; results/page_final.png is kept as documentation
+# Screenshots: page_final*.png is kept as documentation, the rest are scratch
+results/s5_*.png
+results/s6_*.png
 results/sec_*.png
 results/page_full.png
+results/page_500m.png
 
 __pycache__/
 *.pyc

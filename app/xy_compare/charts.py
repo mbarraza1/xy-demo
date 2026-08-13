@@ -33,21 +33,26 @@ def _series(name: str, lib: str, xs, ys):
 
 
 def _chart(title, y_label, specs, y_format=None, log_y=False, height=340,
-           x_domain=None):
+           x_domain=None, x_label="points plotted", legend_loc="upper left"):
     children = []
     for name, lib, xs, ys in specs:
         children.extend(_series(name, lib, xs, ys))
     # Pin the log domain to the measured range; the autoscaled default leaves a
     # decade of empty gutter before the first point.
+    all_x = [v for _, _, xs, _ in specs for v in xs]
+    if not all_x:
+        # No measurements yet for this chart; render an empty frame rather than
+        # blowing up the whole page on min() of an empty sequence.
+        return xy.chart(xy.x_axis(label=x_label), xy.y_axis(label=y_label),
+                        _theme(), title=title, width=560, height=height)
     if x_domain is None:
-        all_x = [v for _, _, xs, _ in specs for v in xs]
         x_domain = (min(all_x) * 0.8, max(all_x) * 1.25)
     children += [
-        xy.x_axis(label="cells plotted", type_="log", tick_count=5, format=",.0f",
+        xy.x_axis(label=x_label, type_="log", tick_count=5, format=",.0f",
                   domain=x_domain),
         xy.y_axis(label=y_label, type_="log" if log_y else None,
                   format=y_format, tick_count=6),
-        xy.legend(loc="upper left"),
+        xy.legend(loc=legend_loc),
         _theme(),
     ]
     return xy.chart(*children, title=title, width=560, height=height,
@@ -96,6 +101,62 @@ def file_size() -> xy.Chart:
         [("XY", "xy", [r["n"] for r in rows_xy], [r["bytes_html"] / 1e6 for r in rows_xy]),
          ("Plotly", "plotly", [r["n"] for r in rows_pl], [r["bytes_html"] / 1e6 for r in rows_pl])],
         y_format=",.1f",
+    )
+
+
+def big_file_size() -> xy.Chart:
+    """The crossover: XY's payload stops tracking n; Plotly's never does."""
+    rows_xy = D.big_rows("xy", "bytes_html")
+    rows_pl = D.big_rows("plotly", "bytes_html")
+    return _chart(
+        "Interactive file size vs points",
+        "megabytes",
+        [("XY", "xy", [r["n"] for r in rows_xy], [r["bytes_html"] / 1e6 for r in rows_xy]),
+         ("Plotly", "plotly", [r["n"] for r in rows_pl], [r["bytes_html"] / 1e6 for r in rows_pl])],
+        y_format=",.0f", log_y=True,
+    )
+
+
+def big_png_time() -> xy.Chart:
+    rows_xy = D.big_rows("xy", "t_export_png")
+    rows_mp = D.big_rows("matplotlib", "t_export_png")
+    return _chart(
+        "Time to rasterise a PNG vs points",
+        "seconds",
+        [("XY", "xy", [r["n"] for r in rows_xy], [r["t_export_png"] for r in rows_xy]),
+         ("matplotlib", "matplotlib", [r["n"] for r in rows_mp],
+          [r["t_export_png"] for r in rows_mp])],
+        y_format=",.2f", log_y=True,
+    )
+
+
+def big_memory() -> xy.Chart:
+    specs = []
+    for lib, label in (("xy", "XY"), ("plotly", "Plotly"), ("matplotlib", "matplotlib")):
+        rows = D.big_rows(lib, "peak_rss_gb")
+        if rows:
+            specs.append((label, lib, [r["n"] for r in rows],
+                          [r["peak_rss_gb"] for r in rows]))
+    return _chart(
+        "Peak process memory vs points",
+        "gigabytes",
+        specs, y_format=",.1f",
+    )
+
+
+def big_render_time() -> xy.Chart:
+    """Time until a canvas actually appears. Only rows that rendered are plotted."""
+    specs = []
+    for lib, label in (("xy", "XY"), ("plotly", "Plotly")):
+        rows = [r for r in D.render_rows(lib)
+                if r.get("rendered") and r.get("t_render_ms") is not None]
+        if rows:
+            specs.append((label, lib, [r["n"] for r in rows],
+                          [r["t_render_ms"] for r in rows]))
+    return _chart(
+        "Time until the plot appears in the browser",
+        "milliseconds to paint",
+        specs, y_format=",.0f", log_y=True, legend_loc="lower right",
     )
 
 

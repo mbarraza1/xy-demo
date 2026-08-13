@@ -17,6 +17,77 @@ with open(os.path.join(RESULTS, "report_data.json")) as fh:
 BENCH = REPORT["benchmark"]
 INTERACTION = [r for r in REPORT["interaction"] if r.get("status") == "ok"]
 PIPELINE = REPORT["pipeline"]
+BIGSWEEP = REPORT.get("bigsweep", [])
+BIGINTERACTION = REPORT.get("biginteraction", [])
+
+BIG_N = 500_000_000
+
+try:
+    with open(os.path.join(RESULTS, "fidelity_meta.json")) as fh:
+        FIDELITY = json.load(fh)
+except (FileNotFoundError, json.JSONDecodeError):
+    FIDELITY = {}
+
+
+def big_rows(lib: str, key: str) -> list[dict]:
+    """Successful big-sweep rows for one library that carry `key`."""
+    return sorted(
+        (r for r in BIGSWEEP
+         if r["lib"] == lib and r.get("status") == "ok" and r.get(key) is not None),
+        key=lambda r: r["n"],
+    )
+
+
+def big_at(lib: str, n: int, key: str):
+    for r in BIGSWEEP:
+        if r["lib"] == lib and r["n"] == n:
+            return r.get(key)
+    return None
+
+
+def big_status(lib: str, n: int) -> str:
+    for r in BIGSWEEP:
+        if r["lib"] == lib and r["n"] == n:
+            return r.get("status", "unknown")
+    return "not_run"
+
+
+def big_max_ok(lib: str, key: str):
+    """Largest n at which this library successfully produced `key`, and its value."""
+    rows = big_rows(lib, key)
+    return (rows[-1]["n"], rows[-1][key]) if rows else (None, None)
+
+
+# ---- browser render outcomes for the big artifacts ----
+
+def render_rows(lib: str) -> list[dict]:
+    return sorted((r for r in BIGINTERACTION if r["lib"] == lib),
+                  key=lambda r: r["n"])
+
+
+def render_at(lib: str, n: int) -> dict | None:
+    for r in BIGINTERACTION:
+        if r["lib"] == lib and r["n"] == n:
+            return r
+    return None
+
+
+def last_rendering_n(lib: str):
+    """Largest n whose exported file actually painted a canvas in the browser."""
+    ok = [r for r in render_rows(lib) if r.get("rendered")]
+    return ok[-1]["n"] if ok else None
+
+
+def first_failing_n(lib: str):
+    """Smallest n whose exported file failed to paint, however it failed."""
+    bad = [r for r in render_rows(lib) if not r.get("rendered")]
+    return bad[0]["n"] if bad else None
+
+
+def first_silent_failure_n(lib: str):
+    """Smallest n that loaded cleanly and then simply never drew anything."""
+    bad = [r for r in render_rows(lib) if r.get("status") == "never_rendered"]
+    return bad[0]["n"] if bad else None
 
 N_CELLS = PIPELINE["n_cells"]
 N_GENES_TOTAL = 27_998
