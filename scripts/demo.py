@@ -1,69 +1,60 @@
-"""Live demo: build an N-point chart with XY, time every stage, open it.
+"""Live demo: race XY, Plotly and matplotlib on the same points under one clock.
 
-    .venv/bin/python scripts/demo.py                # 250M points
-    .venv/bin/python scripts/demo.py --n 50000000   # any size
-    .venv/bin/python scripts/demo.py --compare      # also run Plotly at 10M
+    .venv/bin/python scripts/demo.py                     # 250M points, 20s each
+    .venv/bin/python scripts/demo.py --n 10000000        # any size
+    .venv/bin/python scripts/demo.py --timeout 60        # a longer leash
 
-Prints each stage as it completes so the timings are visible while you talk,
-then opens the finished chart in your browser.
+Each library gets its own process and the same hard wall-clock budget. The point
+arrays are generated ONCE and memory-mapped into every worker, so the clock
+measures charting rather than identical data-generation overhead. Whatever
+finishes is shown; whatever runs out of time is shown as that, which at 250M is
+the entire point. Ends by serving a comparison page and opening it.
 
-PRESENTER NOTE - read before you demo:
-  Pan freely. Do NOT scroll-zoom deep on stage. An exported XY file carries a
-  density surface plus an ~8,200 point sample; on zoom the client asks a kernel
-  for a finer view, and a file has no kernel, so the plot empties out after the
-  first wheel notch. Measured: 43% ink -> 3.7%. Zooming is a live-backend
-  feature, and at 250M that costs seconds per zoom. The story this demo tells is
-  "a correct interactive overview of a quarter-billion points, in a 2 MB file,
-  in under two seconds" - which is true, and which nothing else here can do.
+PRESENTER NOTE: pan the XY chart freely, but do not scroll-zoom deep on stage.
+An exported file has no kernel, so zoom falls through to the ~8,200 point sample
+baked into it and the plot empties after the first notch.
 """
 
 from __future__ import annotations
 
 import argparse
+import functools
+import http.server
 import json
 import os
+import shutil
+import socketserver
+import subprocess
+import sys
+import threading
 import time
-import warnings
 import webbrowser
 
 import numpy as np
 
-# XY warns that it is switching to a density surface above 2M points. That is
-# expected here and the message would interleave into the timing lines mid-demo.
-warnings.filterwarnings("ignore", category=RuntimeWarning, module="xy.*")
-
-BLUE_RAMP = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5",
-             "#256abf", "#184f95", "#0d366b"]
-OUT = "results/demo_chart.html"
-W, H = 1100, 780
+DEMO = "results/demo"
+DATA = os.path.join(DEMO, "data")
+LIBS = [("xy", "XY", "#2a78d6"),
+        ("plotly", "Plotly", "#1baf7a"),
+        ("matplotlib", "matplotlib", "#eb6834")]
+INLINE_LIMIT = 50 * 1024 * 1024      # never iframe a file bigger than this
 
 
-class Stage:
-    """Print a stage and its elapsed time as it finishes."""
-
-    def __init__(self, label: str, width: int = 42):
-        self.label, self.width = label, width
-
-    def __enter__(self):
-        print(f"  {self.label:<{self.width}}", end="", flush=True)
-        self.t = time.perf_counter()
-        return self
-
-    def __exit__(self, *a):
-        self.dt = time.perf_counter() - self.t
-        print(f"{self.dt:8.2f} s")
-
-
-def build_points(n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Tile the real 1.3M-cell UMAP up to n points with Gaussian jitter."""
+def generate(n: int) -> float:
+    """Tile the real 1.3M-cell UMAP up to n points, once, to disk."""
+    os.makedirs(DATA, exist_ok=True)
+    t0 = time.perf_counter()
     emb = np.load("data/umap2.npy")
     tot = np.load("data/cell_meta.npz")["total_counts"]
     depth = np.log10(np.maximum(tot, 1.0)).astype(np.float32)
     src = emb.shape[0]
     rng = np.random.default_rng(0)
-    xs = np.empty(n, dtype=np.float32)
-    ys = np.empty(n, dtype=np.float32)
-    cs = np.empty(n, dtype=np.float32)
+    xs = np.lib.format.open_memmap(os.path.join(DATA, "x.npy"), mode="w+",
+                                   dtype=np.float32, shape=(n,))
+    ys = np.lib.format.open_memmap(os.path.join(DATA, "y.npy"), mode="w+",
+                                   dtype=np.float32, shape=(n,))
+    cs = np.lib.format.open_memmap(os.path.join(DATA, "c.npy"), mode="w+",
+                                   dtype=np.float32, shape=(n,))
     w = i = 0
     while w < n:
         take = min(src, n - w)
@@ -76,106 +67,195 @@ def build_points(n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
             ys[sl] += rng.normal(0, 0.06, take).astype(np.float32)
         w += take
         i += 1
-    return xs, ys, cs
+    for a in (xs, ys, cs):
+        a.flush()
+    return time.perf_counter() - t0
 
 
-def recorded_comparison(n: int) -> list[tuple[str, str, str]]:
-    """Previously measured Plotly / matplotlib numbers, if the sweep has run."""
+def run_one(lib: str, timeout: float) -> dict:
+    """One library, one process, one hard deadline."""
+    cmd = [sys.executable, "scripts/demo_worker.py", "--lib", lib,
+           "--data", DATA, "--out", DEMO]
+    t0 = time.perf_counter()
     try:
-        with open("results/bigsweep.json") as fh:
-            sweep = json.load(fh)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return []
-    rows = []
-    for lib, label in (("plotly", "Plotly"), ("matplotlib", "matplotlib")):
-        rec = next((r for r in sweep if r["lib"] == lib and r["n"] == n), None)
-        if not rec:
-            continue
-        if rec.get("status") != "ok":
-            rows.append((label, "did not complete", rec.get("status", "")))
-            continue
-        if rec.get("bytes_html"):
-            rows.append((label,
-                         f"{rec['t_export_html']:.1f} s to write",
-                         f"{rec['bytes_html']/1e6:,.0f} MB file"))
-        elif rec.get("t_export_png"):
-            t = rec["t_export_png"]
-            rows.append((label,
-                         f"{t/60:.1f} min to render" if t > 60 else f"{t:.1f} s to render",
-                         "static PNG"))
-    return rows
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        # Kill left a partial file behind; a half-written 4 GB HTML helps nobody.
+        for stale in (f"{lib}.html", f"{lib}.png"):
+            path = os.path.join(DEMO, stale)
+            if os.path.exists(path):
+                os.remove(path)
+        return {"lib": lib, "status": "timeout", "elapsed": timeout}
+    elapsed = time.perf_counter() - t0
+    if proc.returncode != 0:
+        tail = (proc.stderr or "").strip().splitlines()
+        return {"lib": lib, "status": "error", "elapsed": elapsed,
+                "error": (tail[-1] if tail else "non-zero exit")[:200]}
+    try:
+        rec = json.loads(proc.stdout.strip().splitlines()[-1])
+    except Exception:
+        return {"lib": lib, "status": "error", "elapsed": elapsed,
+                "error": "no result from worker"}
+    rec.update(status="ok", elapsed=elapsed)
+    return rec
+
+
+def panel(lib: str, label: str, color: str, rec: dict, timeout: float) -> str:
+    if rec.get("status") == "ok":
+        badge = (f'<span class="ok">finished in {rec["total"]:.2f} s</span>')
+        stats = (f'{rec["bytes"]/1e6:,.1f} MB &middot; built {rec["t_build"]:.2f} s '
+                 f'&middot; wrote {rec["t_export"]:.2f} s &middot; '
+                 f'peak {rec["peak_gb"]:.1f} GB')
+        if rec["kind"] == "png":
+            body = f'<img src="{rec["output"]}" alt="{label} output">'
+        elif rec["bytes"] > INLINE_LIMIT:
+            # Learned the hard way: a multi-GB figure in an iframe takes the
+            # whole comparison page down with it.
+            body = (f'<div class="miss"><p><strong>{rec["bytes"]/1e6:,.0f} MB</strong> '
+                    f'— too large to embed without freezing this page.</p>'
+                    f'<p><a href="{rec["output"]}" target="_blank">Open it in its '
+                    f'own tab</a> if you want to watch it struggle.</p></div>')
+        else:
+            body = f'<iframe src="{rec["output"]}" loading="lazy"></iframe>'
+    elif rec.get("status") == "timeout":
+        badge = f'<span class="bad">still running at {timeout:.0f} s</span>'
+        stats = "killed before it produced anything"
+        body = ('<div class="miss"><p class="big">no chart</p>'
+                f'<p>{label} had not finished after {timeout:.0f} seconds, '
+                f'so it was stopped.</p></div>')
+    else:
+        badge = '<span class="bad">failed</span>'
+        stats = rec.get("error", "")[:160]
+        body = '<div class="miss"><p class="big">no chart</p></div>'
+    return f"""
+    <section class="panel">
+      <h2 style="color:{color}">{label}</h2>
+      <p class="badge">{badge}</p>
+      <div class="frame">{body}</div>
+      <p class="stats">{stats}</p>
+    </section>"""
+
+
+PAGE = """<!doctype html><meta charset="utf-8"><title>{n:,} points, three ways</title>
+<style>
+  :root {{ color-scheme: light; --bg:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b;
+           --muted:#898781; --line:rgba(11,11,11,.12); }}
+  @media (prefers-color-scheme: dark) {{
+    :root {{ --bg:#0d0d0d; --surface:#1a1a19; --ink:#fff; --muted:#898781;
+             --line:rgba(255,255,255,.12); }} }}
+  body {{ margin:0; background:var(--bg); color:var(--ink);
+          font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif; }}
+  .wrap {{ max-width:1400px; margin:0 auto; padding:2.5rem 1.5rem; }}
+  h1 {{ font-size:2rem; margin:0 0 .4rem; }}
+  .lede {{ color:var(--muted); margin:0 0 2rem; max-width:70ch; }}
+  .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(380px,1fr));
+           gap:1.25rem; }}
+  .panel {{ background:var(--surface); border:1px solid var(--line);
+            border-radius:12px; padding:1rem; }}
+  .panel h2 {{ margin:0 0 .35rem; font-size:1.1rem; }}
+  .badge {{ margin:0 0 .75rem; font-size:.85rem; }}
+  .ok {{ color:#2a78d6; font-weight:600; }}
+  .bad {{ color:#eb6834; font-weight:600; }}
+  .frame {{ background:var(--bg); border-radius:8px; overflow:hidden;
+            height:520px; display:flex; align-items:center;
+            justify-content:center; }}
+  iframe {{ width:100%; height:100%; border:0; }}
+  img {{ max-width:100%; max-height:100%; object-fit:contain; }}
+  .miss {{ text-align:center; color:var(--muted); padding:1.5rem; }}
+  .miss .big {{ font-size:1.4rem; font-weight:600; color:#eb6834; margin:0 0 .4rem; }}
+  .stats {{ color:var(--muted); font-size:.82rem; margin:.75rem 0 0;
+            font-variant-numeric:tabular-nums; }}
+  footer {{ color:var(--muted); font-size:.82rem; margin-top:2.5rem;
+            border-top:1px solid var(--line); padding-top:1.25rem; max-width:80ch; }}
+</style>
+<div class="wrap">
+  <h1>{n:,} points, three ways</h1>
+  <p class="lede">{lede}</p>
+  <div class="grid">{panels}
+  </div>
+  <footer>{footer}</footer>
+</div>
+"""
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=250_000_000)
-    ap.add_argument("--compare", action="store_true",
-                    help="also build the same chart with Plotly at 10M, live")
+    ap.add_argument("--timeout", type=float, default=20.0)
+    ap.add_argument("--port", type=int, default=8899)
     ap.add_argument("--no-open", action="store_true")
+    ap.add_argument("--keep-data", action="store_true",
+                    help="keep the generated .npy columns for a re-run")
     args = ap.parse_args()
-    n = args.n
+    n, timeout = args.n, args.timeout
 
-    print(f"\n  Plotting {n:,} points with XY")
-    print("  " + "-" * 50)
+    os.makedirs(DEMO, exist_ok=True)
+    for lib, _, _ in LIBS:
+        for ext in ("html", "png"):
+            p = os.path.join(DEMO, f"{lib}.{ext}")
+            if os.path.exists(p):
+                os.remove(p)
 
-    with Stage("generate points") as s_gen:
-        x, y, c = build_points(n)
-
-    import xy   # imported here so its cost is visible as its own stage
-
-    with Stage("build the chart") as s_build:
-        chart = xy.scatter_chart(
-            xy.scatter(x, y, color=c, colormap=BLUE_RAMP, size=2.0, opacity=0.55,
-                       density=None),
-            xy.x_axis(label="UMAP 1"),
-            xy.y_axis(label="UMAP 2"),
-            xy.colorbar(title="log10 UMI"),
-            xy.theme(background="#fcfcfb", plot_background="#fcfcfb",
-                     grid_color="#e1e0d9", axis_color="#c3c2b7",
-                     text_color="#0b0b0b"),
-            title=f"{n:,} points",
-            width=W, height=H,
-        )
-
-    os.makedirs("results", exist_ok=True)
-    with Stage("write a self-contained HTML file") as s_exp:
-        chart.to_html(OUT)
-
-    size = os.path.getsize(OUT)
-    print("  " + "-" * 50)
-    print(f"  {'XY total (build + write)':<42}{s_build.dt + s_exp.dt:8.2f} s")
-    print(f"\n  {size/1e6:,.1f} MB, self-contained, for {n:,} points.")
-    print(f"  The same file is 1.9 MB at 10 million points - above ~2 million XY "
-          f"sends\n  a screen-bounded density surface, so the payload stops "
-          f"tracking the data.")
-
-    if args.compare:
-        print("\n  Same chart, Plotly, at 10,000,000 points (25x less data):")
-        import plotly.graph_objects as go
-        xs, ys, cs = x[:10_000_000], y[:10_000_000], c[:10_000_000]
-        scale = [[i / (len(BLUE_RAMP) - 1), h] for i, h in enumerate(BLUE_RAMP)]
-        with Stage("  build the chart"):
-            fig = go.Figure(go.Scattergl(
-                x=xs, y=ys, mode="markers",
-                marker=dict(color=cs, colorscale=scale, size=2.0, opacity=0.55)))
-            fig.update_layout(width=W, height=H)
-        p = "results/demo_plotly.html"
-        with Stage("  write a self-contained HTML file"):
-            fig.write_html(p, include_plotlyjs=True, full_html=True)
-        print(f"\n  {os.path.getsize(p)/1e6:,.0f} MB file for 10,000,000 points")
-
-    rows = recorded_comparison(n)
-    if rows:
-        print(f"\n  Previously measured at {n:,} points on this machine:")
-        for label, a, b in rows:
-            print(f"    {label:<12} {a:<22} {b}")
-
-    print()
-    if not args.no_open:
-        print(f"  opening {OUT}\n")
-        webbrowser.open("file://" + os.path.abspath(OUT))
+    print(f"\n  {n:,} points — each library gets {timeout:.0f} seconds\n", flush=True)
+    need = not (args.keep_data and os.path.exists(os.path.join(DATA, "x.npy"))
+                and np.load(os.path.join(DATA, "x.npy"), mmap_mode="r").shape[0] == n)
+    if need:
+        print(f"  {'generating the points (once, shared)':<40}", end="", flush=True)
+        dt = generate(n)
+        print(f"{dt:7.2f} s", flush=True)
     else:
-        print(f"  wrote {OUT}\n")
+        print("  reusing the generated points", flush=True)
+    print()
+
+    results = {}
+    for lib, label, _ in LIBS:
+        print(f"  {label:<40}", end="", flush=True)
+        rec = run_one(lib, timeout)
+        results[lib] = rec
+        if rec["status"] == "ok":
+            print(f"{rec['total']:7.2f} s   {rec['bytes']/1e6:>9,.1f} MB", flush=True)
+        elif rec["status"] == "timeout":
+            print(f"{'—':>7}     still running at {timeout:.0f}s, killed", flush=True)
+        else:
+            print(f"{'—':>7}     failed: {rec.get('error','')[:60]}", flush=True)
+
+    finished = [l for l, _, _ in LIBS if results[l]["status"] == "ok"]
+    lede = (f"The same {n:,} points, the same machine, the same colour ramp. Each "
+            f"library was given its own process and {timeout:.0f} seconds to turn "
+            f"those arrays into a finished chart file. "
+            + (f"{len(finished)} of 3 made it."
+               if len(finished) < 3 else "All three made it."))
+    footer = (
+        "The points are the real 1,306,127-cell mouse brain UMAP (10x Genomics, E18) "
+        "tiled with Gaussian jitter — the structure is real, the individual points "
+        "are manufactured. Arrays were generated once and memory-mapped into each "
+        "worker, so the clock covers charting only, not data generation. A timeout "
+        "is not a crash: the library was still working when the deadline passed."
+    )
+    panels = "".join(panel(l, lab, col, results[l], timeout) for l, lab, col in LIBS)
+    page = PAGE.format(n=n, lede=lede, panels=panels, footer=footer)
+    with open(os.path.join(DEMO, "compare.html"), "w") as fh:
+        fh.write(page)
+
+    if not args.keep_data:
+        shutil.rmtree(DATA, ignore_errors=True)
+
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=DEMO)
+    handler.log_message = lambda *a, **k: None
+    socketserver.TCPServer.allow_reuse_address = True
+    httpd = socketserver.TCPServer(("127.0.0.1", args.port), handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{args.port}/compare.html"
+    print(f"\n  {url}")
+    if not args.no_open:
+        webbrowser.open(url)
+    print("  serving — Ctrl-C when you're done\n")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        httpd.shutdown()
+        print("  stopped\n")
 
 
 if __name__ == "__main__":
